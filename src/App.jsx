@@ -61,13 +61,11 @@ const formatDateForComparison = (datetimeString) => {
 };
 
 export default function BeverageDashboard() {
-  // เริ่มต้นด้วยข้อมูลว่าง (ไม่มี Mock Data)
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // State for handling different period modes (day, month, year)
   const [filterMode, setFilterMode] = useState('day'); 
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -76,7 +74,8 @@ export default function BeverageDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
-  const DATA_URL = "https://www.google.com/url?sa=E&q=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FAKfycbzcNRoFsQ2gkzcLQ21qQdYx1VR8S0m1xMj3hN2TJFkp2Dx2e7wrVc9MInQtssJEgeL0%2Fexec";
+  // [MODIFIED] Updated with new Google Apps Script Web App URL
+  const DATA_URL = "https://script.google.com/macros/s/AKfycbzcNRoFsQ2gkzcLQ21qQdYx1VR8S0m1xMj3hN2TJFkp2Dx2e7wrVc9MInQtssJEgeL0/exec";
 
   useEffect(() => {
     const fetchData = async () => {
@@ -144,7 +143,6 @@ export default function BeverageDashboard() {
     fetchData();
   }, []);
 
-  // Generate list of available years dynamically based on the dataset
   const availableYears = useMemo(() => {
     const years = new Set(
       data.map(item => formatDateForComparison(item.datetime).split('-')[0]).filter(Boolean)
@@ -152,7 +150,6 @@ export default function BeverageDashboard() {
     return Array.from(years).sort().reverse();
   }, [data]);
 
-  // [MODIFIED] Find the latest available date in the dataset to assist users when filtered date has 0 records
   const latestAvailableDate = useMemo(() => {
     if (!data || data.length === 0) return '';
     const dates = data
@@ -162,11 +159,9 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // Filter data by Mode (Day/Month/Year), Search Term, and Status
   const displayData = useMemo(() => {
     let filtered = data;
 
-    // 1. Filter by Date/Month/Year Mode
     if (filterMode === 'day' && selectedDate) {
       filtered = filtered.filter(item => formatDateForComparison(item.datetime) === selectedDate);
     } else if (filterMode === 'month' && selectedMonth) {
@@ -175,7 +170,6 @@ export default function BeverageDashboard() {
       filtered = filtered.filter(item => formatDateForComparison(item.datetime).startsWith(selectedYear));
     }
 
-    // 2. Filter by Search Term
     if (searchTerm) {
        const lowerCaseSearch = searchTerm.toLowerCase();
        filtered = filtered.filter(item => 
@@ -185,7 +179,6 @@ export default function BeverageDashboard() {
       );
     }
     
-    // 3. Filter out canceled orders
     if (hideCanceled) {
       filtered = filtered.filter(item => {
         const status = item.status || '';
@@ -195,7 +188,6 @@ export default function BeverageDashboard() {
     
     return filtered;
   }, [data, searchTerm, selectedDate, selectedMonth, selectedYear, hideCanceled, filterMode]);
-
 
   const metrics = useMemo(() => {
     const totalSales = displayData.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
@@ -221,7 +213,6 @@ export default function BeverageDashboard() {
   }, [displayData]);
 
   const chartsData = useMemo(() => {
-    // 1. Payment Methods
     const paymentMap = {};
     displayData.forEach(item => {
       const pm = item.payment || 'Unknown';
@@ -229,7 +220,6 @@ export default function BeverageDashboard() {
     });
     const paymentData = Object.keys(paymentMap).map(key => ({ name: key, value: paymentMap[key] }));
 
-    // 2. Delivery Points
     const deliveryMap = {};
     displayData.forEach(item => {
       const dp = item.deliveryPoint || 'Unknown';
@@ -237,7 +227,6 @@ export default function BeverageDashboard() {
     });
     const deliveryData = Object.keys(deliveryMap).map(key => ({ name: key, value: deliveryMap[key] }));
 
-    // 3. Trend Chart (Hourly, Daily, Monthly dynamically calculated)
     const trendMap = {};
     displayData.forEach(item => {
       if (item.datetime) {
@@ -248,21 +237,18 @@ export default function BeverageDashboard() {
         let displayKey = '';
 
         if (filterMode === 'day') {
-          // Hourly grouping
           const timePart = item.datetime.split(' ')[1];
           if (timePart) {
-            sortKey = timePart.split(':')[0]; // "00" to "23"
+            sortKey = timePart.split(':')[0];
             displayKey = sortKey + ":00";
           }
         } else if (filterMode === 'month') {
-          // Daily grouping
-          sortKey = dateFormatted; // "YYYY-MM-DD"
+          sortKey = dateFormatted;
           const [yyyy, mm, dd] = dateFormatted.split('-');
           const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
           displayKey = `${parseInt(dd, 10)} ${monthNames[parseInt(mm, 10)]}`;
         } else if (filterMode === 'year') {
-          // Monthly grouping
-          sortKey = dateFormatted.substring(0, 7); // "YYYY-MM"
+          sortKey = dateFormatted.substring(0, 7);
           const [yyyy, mm] = dateFormatted.split('-');
           const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
           const yearBE = parseInt(yyyy, 10) + 543;
@@ -299,7 +285,6 @@ export default function BeverageDashboard() {
             <div className="flex items-center gap-3 mt-2">
               <p className="text-slate-500 text-sm">Real-time overview of daily sales and orders</p>
               
-              {/* Status Indicator */}
               {loading ? (
                 <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
                   <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
@@ -320,10 +305,7 @@ export default function BeverageDashboard() {
             </div>
           </div>
           
-          {/* Controls Wrapper */}
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
-             
-            {/* Period Filter Toggle */}
             <div className="flex bg-slate-100 p-1 rounded-lg text-sm w-full sm:w-auto">
               <button
                   onClick={() => setFilterMode('day')}
@@ -345,7 +327,6 @@ export default function BeverageDashboard() {
               </button>
             </div>
 
-            {/* Dynamic Date Picker Input */}
             <div className="relative w-full sm:w-auto min-w-[160px]">
                 <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                     <Calendar size={18} />
@@ -382,7 +363,6 @@ export default function BeverageDashboard() {
                   </select>
                 )}
 
-                {/* Clear Date Button */}
                 {((filterMode === 'day' && selectedDate) || 
                   (filterMode === 'month' && selectedMonth) || 
                   (filterMode === 'year' && selectedYear)) && (
@@ -412,7 +392,6 @@ export default function BeverageDashboard() {
           </div>
         </header>
 
-        {/* [MODIFIED] Helpful Notification Banner when filtered date has 0 records */}
         {data.length > 0 && displayData.length === 0 && filterMode === 'day' && selectedDate && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm shadow-sm">
             <div className="flex items-center gap-2">
@@ -461,8 +440,6 @@ export default function BeverageDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Sales Trend Chart */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
             <h2 className="text-lg font-semibold mb-4 text-slate-800">{chartTitle}</h2>
             <div className="h-[300px] w-full">
@@ -487,7 +464,6 @@ export default function BeverageDashboard() {
             </div>
           </div>
 
-          {/* Payment Methods Chart */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
             <h2 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2">
               <CreditCard size={18} className="text-slate-400" /> ช่องทางชำระเงิน
@@ -616,15 +592,6 @@ export default function BeverageDashboard() {
                           <AlertCircle size={32} />
                           <p className="font-medium text-lg">เกิดข้อผิดพลาดในการเชื่อมต่อข้อมูล</p>
                           <p className="text-sm font-semibold">{error}</p>
-                          <div className="text-xs text-slate-500 mt-4 max-w-md bg-slate-50 p-4 rounded-lg border border-slate-200 text-left">
-                            <p className="font-bold mb-1 text-slate-700">วิธีแก้ไข:</p>
-                            <ol className="list-decimal pl-4 space-y-1">
-                              <li>ไปที่ Google Sheets ของคุณ ➔ Extensions ➔ Apps Script</li>
-                              <li>กดปุ่ม <b>Deploy</b> (มุมขวาบน) ➔ New deployment (หรือ Manage deployments)</li>
-                              <li>ตั้งค่า Who has access เป็น <b>Anyone (ทุกคน)</b></li>
-                              <li>คัดลอก URL ใหม่มาใส่ในตัวแปร <code className="bg-white px-1 py-0.5 rounded border border-slate-300">DATA_URL</code> ในโค้ดบรรทัดที่ 46</li>
-                            </ol>
-                          </div>
                         </div>
                       ) : (
                         "ไม่พบข้อมูล (No data found)"
