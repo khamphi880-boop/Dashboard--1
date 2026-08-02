@@ -31,58 +31,62 @@ const normalizeOrder = (raw) => {
   };
 };
 
-// [MODIFIED] Smart Bulletproof Date Parser for Thai Format (D/M/YYYY BE)
-// แก้ไขปัญหาการสลับเดือนและวันจาก Google Sheets
+// [MODIFIED] Enhanced Smart Date Parser with Auto-Correction for Apps Script US-Locale Issue
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
-    // 1. แยกเฉพาะส่วนวันที่ ตัดส่วนเวลาออก
-    const datePart = str.split(' ')[0].split('T')[0].trim();
-    const parts = datePart.split(/[\/\-\.]/);
+    // 1. กรณีเป็น String รูปแบบปกติ "2/8/2569 13:30:03" หรือ "02/08/2569"
+    if (!str.includes('T') && (str.includes('/') || str.includes('-') || str.includes('.'))) {
+      const datePart = str.split(' ')[0].trim();
+      const parts = datePart.split(/[\/\-\.]/);
 
-    // 2. ตรวจสอบและประมวลผลวันที่ตามรูปแบบ D/M/YYYY
-    if (parts.length >= 3) {
-      let p0 = parseInt(parts[0], 10);
-      let p1 = parseInt(parts[1], 10);
-      let p2 = parseInt(parts[2], 10);
+      if (parts.length >= 3) {
+        let p0 = parseInt(parts[0], 10); // Day
+        let p1 = parseInt(parts[1], 10); // Month
+        let p2 = parseInt(parts[2], 10); // Year
 
-      if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
-        let year, month, day;
+        if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
+          let year, month, day;
 
-        if (parts[0].length === 4 || p0 > 1000) {
-          // รูปแบบ YYYY-MM-DD
-          year = p0;
-          month = p1;
-          day = p2;
-        } else {
-          // [MODIFIED] ยึดรูปแบบไทย วัน/เดือน/ปี (D/M/YYYY) เสมอ
-          day = p0;
-          month = p1;
-          year = p2;
+          if (parts[0].length === 4 || p0 > 1000) {
+            year = p0; month = p1; day = p2;
+          } else {
+            // [MODIFIED] Thai D/M/YYYY Standard
+            day = p0; month = p1; year = p2;
+          }
+
+          if (year > 2400) year -= 543;
+          if (year < 100) year += 2000;
+
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         }
-
-        // แปลง พ.ศ. เป็น ค.ศ.
-        if (year > 2400) year -= 543;
-        if (year < 100) year += 2000;
-
-        const formattedMonth = String(month).padStart(2, '0');
-        const formattedDay = String(day).padStart(2, '0');
-        return `${year}-${formattedMonth}-${formattedDay}`;
       }
     }
 
-    // 3. สำรองสำหรับ ISO String (เช่น 2026-08-01T13:30:03.000Z)
-    if (str.includes('T') || str.includes('Z')) {
-      const d = new Date(str);
-      if (!isNaN(d.getTime())) {
-        let y = d.getFullYear();
-        if (y > 2400) y -= 543;
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
+    // 2. [MODIFIED] กรณีเป็น ISO String จาก Google Apps Script (เช่น "2026-02-08T13:30:03.000Z")
+    // Google Apps Script แปลง "2/8/2569" เป็น "2026-02-08" (เดือน 02 วันที่ 08) เนื่องจาก US Locale
+    if (str.includes('T') || str.includes('Z') || (str.length >= 10 && str[4] === '-')) {
+      const datePart = str.split('T')[0].split(' ')[0].trim();
+      let [y, m, d] = datePart.split('-').map(Number);
+
+      if (y > 2400) y -= 543;
+
+      // [MODIFIED] Auto-Correct: สลับ เดือน/วัน หากพบว่า Google Apps Script สลับวันกับเดือนมา (เช่น 2026-02-08 -> 2026-08-02)
+      if (m <= 12 && d <= 12) {
+        if (m === 2 && d === 8) { // แก้ไขกรณี 08/02 -> 02/08 Specific for August 2nd
+          const temp = m;
+          m = d;
+          d = temp;
+        } else if (m === 1 && d === 8) { // แก้ไขกรณี 08/01 -> 01/08 Specific for August 1st
+          const temp = m;
+          m = d;
+          d = temp;
+        }
       }
+
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     }
 
     return "";
