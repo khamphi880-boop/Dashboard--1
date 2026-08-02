@@ -95,7 +95,7 @@ export default function BeverageDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
-  const DATA_URL = "https://script.google.com/macros/s/AKfycbzcNRoFsQ2gkzcLQ21qQdYx1VR8S0m1xMj3hN2TJFkp2Dx2e7wrVc9MInQtssJEgeL0/exec";
+  const DATA_URL = "https://script.google.com/macros/s/AKfycbw_WzhZ6sc1cP6vI6D1-kCSWbsjUTd5eSiU9VlnIl16CVB_K-i-qjySuOQ7YngKJoxr/exec";
 
   useEffect(() => {
     const fetchData = async () => {
