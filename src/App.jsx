@@ -31,12 +31,49 @@ const normalizeOrder = (raw) => {
   };
 };
 
-// Smart Bulletproof Date Parser
+// [MODIFIED] Smart Bulletproof Date Parser for Thai Format (D/M/YYYY BE)
+// แก้ไขปัญหาการสลับเดือนและวันจาก Google Sheets
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
+    // 1. แยกเฉพาะส่วนวันที่ ตัดส่วนเวลาออก
+    const datePart = str.split(' ')[0].split('T')[0].trim();
+    const parts = datePart.split(/[\/\-\.]/);
+
+    // 2. ตรวจสอบและประมวลผลวันที่ตามรูปแบบ D/M/YYYY
+    if (parts.length >= 3) {
+      let p0 = parseInt(parts[0], 10);
+      let p1 = parseInt(parts[1], 10);
+      let p2 = parseInt(parts[2], 10);
+
+      if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
+        let year, month, day;
+
+        if (parts[0].length === 4 || p0 > 1000) {
+          // รูปแบบ YYYY-MM-DD
+          year = p0;
+          month = p1;
+          day = p2;
+        } else {
+          // [MODIFIED] ยึดรูปแบบไทย วัน/เดือน/ปี (D/M/YYYY) เสมอ
+          day = p0;
+          month = p1;
+          year = p2;
+        }
+
+        // แปลง พ.ศ. เป็น ค.ศ.
+        if (year > 2400) year -= 543;
+        if (year < 100) year += 2000;
+
+        const formattedMonth = String(month).padStart(2, '0');
+        const formattedDay = String(day).padStart(2, '0');
+        return `${year}-${formattedMonth}-${formattedDay}`;
+      }
+    }
+
+    // 3. สำรองสำหรับ ISO String (เช่น 2026-08-01T13:30:03.000Z)
     if (str.includes('T') || str.includes('Z')) {
       const d = new Date(str);
       if (!isNaN(d.getTime())) {
@@ -46,57 +83,6 @@ const formatDateForComparison = (datetimeString) => {
         const day = String(d.getDate()).padStart(2, '0');
         return `${y}-${m}-${day}`;
       }
-    }
-
-    const dateOnly = str.split(' ')[0].trim();
-
-    const buildIso = (y, m, d) => {
-      let year = parseInt(y, 10);
-      let month = parseInt(m, 10);
-      let day = parseInt(d, 10);
-
-      if (isNaN(year) || isNaN(month) || isNaN(day)) return "";
-      if (year > 2400) year -= 543;
-      if (year < 100) year += 2000;
-
-      const formattedMonth = String(month).padStart(2, '0');
-      const formattedDay = String(day).padStart(2, '0');
-      return `${year}-${formattedMonth}-${formattedDay}`;
-    };
-
-    const parts = dateOnly.split(/[\/\-\.]/);
-    if (parts.length >= 3) {
-      const p0 = parseInt(parts[0], 10);
-      const p1 = parseInt(parts[1], 10);
-      const p2 = parseInt(parts[2], 10);
-
-      if (parts[0].length === 4 || p0 > 1900) {
-        return buildIso(p0, p1, p2);
-      }
-
-      if (parts[2].length === 4 || p2 > 1900 || p2 > 50) {
-        let day, month;
-        if (p0 > 12) {
-          day = p0;
-          month = p1;
-        } else if (p1 > 12) {
-          month = p0;
-          day = p1;
-        } else {
-          day = p0;
-          month = p1;
-        }
-        return buildIso(p2, month, day);
-      }
-    }
-
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) {
-      let y = d.getFullYear();
-      if (y > 2400) y -= 543;
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
     }
 
     return "";
@@ -130,7 +116,7 @@ const formatDateToBE = (datetimeString) => {
   }
 };
 
-// [MODIFIED] Custom Thai B.E. DatePicker Component (Replaces native browser datepicker)
+// Custom Thai B.E. DatePicker Component
 function ThaiDatePicker({ value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
@@ -171,7 +157,7 @@ function ThaiDatePicker({ value, onChange }) {
   ];
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDayOfWeek = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // Monday = 0
+  const firstDayOfWeek = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
 
   const handlePrevMonth = () => {
     if (viewMonth === 0) {
@@ -229,7 +215,6 @@ function ThaiDatePicker({ value, onChange }) {
 
       {isOpen && (
         <div className="absolute top-full left-0 mt-2 z-50 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 w-72 transition-all">
-          {/* Header */}
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
             <button 
               onClick={handlePrevMonth}
@@ -249,7 +234,6 @@ function ThaiDatePicker({ value, onChange }) {
             </button>
           </div>
 
-          {/* Days of Week */}
           <div className="grid grid-cols-7 gap-1 text-center mb-1">
             {['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'].map((d, i) => (
               <div key={i} className="text-xs font-semibold text-slate-400 py-1">
@@ -258,7 +242,6 @@ function ThaiDatePicker({ value, onChange }) {
             ))}
           </div>
 
-          {/* Days Grid */}
           <div className="grid grid-cols-7 gap-1 text-center">
             {Array.from({ length: firstDayOfWeek }).map((_, i) => (
               <div key={`empty-${i}`} />
@@ -287,7 +270,6 @@ function ThaiDatePicker({ value, onChange }) {
             })}
           </div>
 
-          {/* Footer Actions */}
           <div className="flex items-center justify-between mt-4 pt-2 border-t border-slate-100 text-xs font-medium">
             <button 
               onClick={() => { onChange(''); setIsOpen(false); }}
@@ -315,7 +297,7 @@ function ThaiDatePicker({ value, onChange }) {
   );
 }
 
-// [MODIFIED] Custom Thai B.E. MonthPicker Component
+// Custom Thai B.E. MonthPicker Component
 function ThaiMonthPicker({ value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
@@ -450,7 +432,6 @@ export default function BeverageDashboard() {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedYear, setSelectedYear] = useState(''); 
   
-  // Chart customization settings
   const [chartType, setChartType] = useState('bar'); 
   const [chartMetric, setChartMetric] = useState('sales'); 
   const [showDataLabels, setShowDataLabels] = useState(true);
@@ -528,7 +509,6 @@ export default function BeverageDashboard() {
     fetchData();
   }, []);
 
-  // Auto-detect and set selectedYear to the latest year available in data
   useEffect(() => {
     if (data.length > 0 && !selectedYear) {
       const years = data
@@ -561,7 +541,6 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // Today's metrics calculation with automatic fallback to latest available date
   const todayMetrics = useMemo(() => {
     const now = new Date();
     const yCE = now.getFullYear();
@@ -676,7 +655,6 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
-  // Aggregates both Sales & Order Count for configurable chart rendering
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach(item => {
@@ -818,7 +796,6 @@ export default function BeverageDashboard() {
               </button>
             </div>
 
-            {/* [MODIFIED] Replaced native date & month inputs with custom Thai B.E. pickers */}
             <div className="relative w-full sm:w-auto min-w-[170px]">
                 {filterMode === 'day' && (
                   <ThaiDatePicker 
@@ -894,8 +871,6 @@ export default function BeverageDashboard() {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          
-          {/* Today's / Latest Day Sales Card */}
           <KpiCard 
             title={todayMetrics.isFallbackToLatest ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})` : "ยอดขายวันนี้ (Today)"} 
             value={`฿${todayMetrics.todaySales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
@@ -904,7 +879,6 @@ export default function BeverageDashboard() {
             highlight={true}
           />
 
-          {/* Total Sales */}
           <KpiCard 
             title="ยอดขายรวม (Total)" 
             value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
@@ -912,21 +886,18 @@ export default function BeverageDashboard() {
             trend={filterMode === 'year' && selectedYear ? `ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}` : selectedDate ? `วันที่ ${formatDateToBE(selectedDate)}` : "ยอดรวมทั้งหมด"}
           />
 
-          {/* Total Orders */}
           <KpiCard 
             title="ออเดอร์ทั้งหมด (Orders)" 
             value={metrics.totalOrders} 
             icon={<ShoppingCart size={24} className="text-blue-500" />}
           />
 
-          {/* Total Items */}
           <KpiCard 
             title="จำนวนสินค้า (Items)" 
             value={metrics.totalItems} 
             icon={<Package size={24} className="text-purple-500" />}
           />
 
-          {/* Avg Order */}
           <KpiCard 
             title="ยอดเฉลี่ย/บิล (Avg.)" 
             value={`฿${metrics.avgOrderValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
@@ -935,11 +906,7 @@ export default function BeverageDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Enhanced & Configurable Chart Card */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
-            
-            {/* Chart Toolbar Controls */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
               <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
                 <Sliders size={18} className="text-indigo-500" />
@@ -947,8 +914,6 @@ export default function BeverageDashboard() {
               </h2>
 
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                
-                {/* Metric Selector */}
                 <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-medium">
                   <button
                     onClick={() => setChartMetric('sales')}
@@ -964,7 +929,6 @@ export default function BeverageDashboard() {
                   </button>
                 </div>
 
-                {/* Chart Type Selector */}
                 <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-medium">
                   <button
                     onClick={() => setChartType('bar')}
@@ -989,7 +953,6 @@ export default function BeverageDashboard() {
                   </button>
                 </div>
 
-                {/* Show Data Labels Switch */}
                 <button
                   onClick={() => setShowDataLabels(!showDataLabels)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
@@ -1002,11 +965,9 @@ export default function BeverageDashboard() {
               </div>
             </div>
 
-            {/* Dynamic Interactive Chart Render */}
             <div className="h-[320px] w-full">
               {chartsData.trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  
                   {chartType === 'bar' ? (
                     <BarChart data={chartsData.trendData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -1100,7 +1061,6 @@ export default function BeverageDashboard() {
                       </Line>
                     </LineChart>
                   )}
-
                 </ResponsiveContainer>
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-slate-400">
