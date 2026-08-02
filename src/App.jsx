@@ -7,73 +7,72 @@ import { ShoppingCart, DollarSign, TrendingUp, Package, AlertCircle, MapPin, Cre
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 const PAYMENT_COLORS = {
-  "ไทยช่วยไทยพลัส": "#10b981", // Emerald 500
-  "โอนพร้อมเพย์": "#3b82f6", // Blue 500
-  "เงินสด": "#f59e0b" // Amber 500
+  "ไทยช่วยไทยพลัส": "#10b981",
+  "โอนพร้อมเพย์": "#3b82f6",
+  "เงินสด": "#f59e0b"
 };
 
-// [MODIFIED] Universal date parser that strictly supports ISO strings (e.g. 2026-08-02T...), BE (พ.ศ.), and CE (ค.ศ.)
+// [MODIFIED] Ultra-robust date parser that strips time completely (both space and ISO 'T' formats)
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
-    const str = String(datetimeString).trim();
+    let str = String(datetimeString).trim();
 
-    // 1. Handle ISO string format (e.g., "2026-08-02T05:20:11.000Z")
+    // 1. Strip ISO time part if present (e.g. "2026-08-02T12:20:11.000Z" -> "2026-08-02")
     if (str.includes('T')) {
-      const d = new Date(str);
-      if (!isNaN(d.getTime())) {
-        let yyyy = d.getFullYear();
-        if (yyyy > 2400) yyyy -= 543;
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
+      str = str.split('T')[0];
+    }
+
+    // 2. Strip space time part if present (e.g. "2/8/2569 12:20:11" -> "2/8/2569")
+    const dateOnly = str.split(' ')[0].trim();
+
+    // 3. Handle Slash format (e.g. "2/8/2569" or "02/08/2569")
+    if (dateOnly.includes('/')) {
+      const parts = dateOnly.split('/');
+      if (parts.length >= 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        let year = parseInt(parts[2], 10);
+
+        if (isNaN(day) || isNaN(month) || isNaN(year)) return "";
+
+        // Convert BE year (> 2400) to CE year
+        if (year > 2400) year -= 543;
+
+        const formattedMonth = String(month).padStart(2, '0');
+        const formattedDay = String(day).padStart(2, '0');
+        return `${year}-${formattedMonth}-${formattedDay}`;
       }
     }
 
-    // 2. Extract date part before space if present
-    const datePart = str.split(' ')[0];
-
-    // 3. Handle dash format (YYYY-MM-DD or DD-MM-YYYY)
-    if (datePart.includes('-')) {
-      const parts = datePart.split('-');
-      if (parts[0].length === 4) {
-        let y = parseInt(parts[0], 10);
-        if (y > 2400) y -= 543;
-        const m = parts[1].padStart(2, '0');
-        const d = parts[2].substring(0, 2).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-      } else {
-        let y = parseInt(parts[2], 10);
-        if (y > 2400) y -= 543;
-        const m = parts[1].padStart(2, '0');
-        const d = parts[0].padStart(2, '0');
-        return `${y}-${m}-${d}`;
+    // 4. Handle Dash format (e.g. "2026-08-02" or "2569-08-02")
+    if (dateOnly.includes('-')) {
+      const parts = dateOnly.split('-');
+      if (parts.length >= 3) {
+        if (parts[0].length === 4) {
+          let year = parseInt(parts[0], 10);
+          if (year > 2400) year -= 543;
+          const month = String(parseInt(parts[1], 10)).padStart(2, '0');
+          const day = String(parseInt(parts[2], 10)).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        } else {
+          let year = parseInt(parts[2], 10);
+          if (year > 2400) year -= 543;
+          const month = String(parseInt(parts[1], 10)).padStart(2, '0');
+          const day = String(parseInt(parts[0], 10)).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
       }
     }
 
-    // 4. Handle slash format (D/M/YYYY or DD/MM/YYYY)
-    if (datePart.includes('/')) {
-      const [day, month, yearRaw] = datePart.split('/');
-      let year = parseInt(yearRaw, 10);
-      if (isNaN(year)) return "";
-      
-      if (year > 2400) {
-        year -= 543;
-      }
-      
-      const paddedMonth = String(month).padStart(2, '0');
-      const paddedDay = String(day).padStart(2, '0');
-      return `${year}-${paddedMonth}-${paddedDay}`;
-    }
-
-    // Fallback parsing via JS Date
-    const parsedDate = new Date(str);
-    if (!isNaN(parsedDate.getTime())) {
-      let yyyy = parsedDate.getFullYear();
-      if (yyyy > 2400) yyyy -= 543;
-      const mm = String(parsedDate.getMonth() + 1).padStart(2, '0');
-      const dd = String(parsedDate.getDate()).padStart(2, '0');
-      return `${yyyy}-${mm}-${dd}`;
+    // 5. Fallback JS Date parsing
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      let y = d.getFullYear();
+      if (y > 2400) y -= 543;
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
     }
 
     return "";
@@ -259,7 +258,6 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
-  // [MODIFIED] Enhanced charts logic to parse time from ISO strings for hourly trend
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach(item => {
