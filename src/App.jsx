@@ -31,7 +31,7 @@ const normalizeOrder = (raw) => {
   };
 };
 
-// Universal date parser that strips time completely
+// Universal date parser for internal logic (YYYY-MM-DD comparison)
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
@@ -94,17 +94,76 @@ const formatDateForComparison = (datetimeString) => {
   }
 };
 
+// [MODIFIED] Helper function to convert any date/time string to Thai B.E. (พ.ศ.) format for UI display
+const formatDateToBE = (datetimeString) => {
+  if (!datetimeString) return '-';
+  try {
+    let str = String(datetimeString).trim();
+    let timePart = '';
+
+    if (str.includes(' ')) {
+      const parts = str.split(' ');
+      str = parts[0];
+      timePart = parts.slice(1).join(' ');
+    } else if (str.includes('T')) {
+      const parts = str.split('T');
+      str = parts[0];
+      timePart = parts[1].split('.')[0];
+    }
+
+    let year, month, day;
+
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length >= 3) {
+        day = parseInt(parts[0], 10);
+        month = parseInt(parts[1], 10);
+        year = parseInt(parts[2], 10);
+      }
+    } else if (str.includes('-')) {
+      const parts = str.split('-');
+      if (parts.length >= 3) {
+        if (parts[0].length === 4) {
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10);
+          day = parseInt(parts[2], 10);
+        } else {
+          day = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10);
+          year = parseInt(parts[2], 10);
+        }
+      }
+    }
+
+    if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
+      return datetimeString;
+    }
+
+    // Convert A.D. (ค.ศ.) to B.E. (พ.ศ.) if year < 2400
+    if (year < 2400) {
+      year += 543;
+    }
+
+    const dd = String(day).padStart(2, '0');
+    const mm = String(month).padStart(2, '0');
+    const yyyy = String(year);
+
+    return timePart ? `${dd}/${mm}/${yyyy} ${timePart}` : `${dd}/${mm}/${yyyy}`;
+  } catch (e) {
+    return datetimeString;
+  }
+};
+
 export default function BeverageDashboard() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // [MODIFIED] Set default filterMode to 'year' and selectedYear to '2023' to gate dashboard for 2023
+  // Default filter set to year 2023 (displayed as พ.ศ. 2566)
   const [filterMode, setFilterMode] = useState('year'); 
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
-  // [MODIFIED] Gated default selected year to 2023
   const [selectedYear, setSelectedYear] = useState('2023'); 
   
   const [isLive, setIsLive] = useState(false);
@@ -184,7 +243,6 @@ export default function BeverageDashboard() {
     const years = new Set(
       data.map(item => formatDateForComparison(item.datetime).split('-')[0]).filter(Boolean)
     );
-    // Ensure 2023 is always present in dropdown if set as selected
     if (selectedYear) {
       years.add(selectedYear);
     }
@@ -199,15 +257,6 @@ export default function BeverageDashboard() {
       .sort();
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
-
-  // Today's date string in YYYY-MM-DD
-  const todayStr = useMemo(() => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  }, []);
 
   // Today's metrics matching
   const todayMetrics = useMemo(() => {
@@ -380,9 +429,10 @@ export default function BeverageDashboard() {
     return { paymentData, trendData };
   }, [displayData, filterMode, selectedDate, selectedYear]);
 
+  // [MODIFIED] Chart title updated to use พ.ศ.
   let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
-  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${selectedDate}`;
-  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (Monthly Sales Trend) ปี ${parseInt(selectedYear) + 543}`;
+  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
+  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (Monthly Sales Trend) ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
@@ -391,11 +441,13 @@ export default function BeverageDashboard() {
         {/* Header Section */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
+            {/* [MODIFIED] Title updated to B.E. year (พ.ศ. 2566) */}
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <span className="text-3xl">🥤</span> Beverage Shop Dashboard (2023)
+              <span className="text-3xl">🥤</span> Beverage Shop Dashboard (พ.ศ. 2566)
             </h1>
             <div className="flex items-center gap-3 mt-2">
-              <p className="text-slate-500 text-sm">Real-time overview of sales and orders for year 2023</p>
+              {/* [MODIFIED] Subtitle updated to B.E. year */}
+              <p className="text-slate-500 text-sm">ภาพรวมยอดขายและรายการสั่งซื้อ Real-time ประจำปี พ.ศ. 2566</p>
               
               {loading ? (
                 <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
@@ -462,15 +514,16 @@ export default function BeverageDashboard() {
                   />
                 )}
 
+                {/* [MODIFIED] Options display B.E. format exclusively (พ.ศ. 2566) */}
                 {filterMode === 'year' && (
                   <select 
                       value={selectedYear}
                       onChange={(e) => setSelectedYear(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all appearance-none cursor-pointer"
+                      className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all appearance-none cursor-pointer font-medium"
                   >
-                      <option value="">เลือกปี (All Years)</option>
+                      <option value="">เลือกปี (ทุกปี)</option>
                       {availableYears.map(year => (
-                          <option key={year} value={year}>{parseInt(year) + 543} ({year})</option>
+                          <option key={year} value={year}>พ.ศ. {parseInt(year) + 543}</option>
                       ))}
                   </select>
                 )}
@@ -509,9 +562,9 @@ export default function BeverageDashboard() {
             <div className="flex items-center gap-2">
               <AlertCircle size={20} className="text-amber-600 shrink-0" />
               <span>
-                ยังไม่มีข้อมูลรายการออเดอร์ในวันที่ <strong>{selectedDate}</strong>
+                ยังไม่มีข้อมูลรายการออเดอร์ในวันที่ <strong>{formatDateToBE(selectedDate)}</strong>
                 {latestAvailableDate && (
-                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong>{latestAvailableDate}</strong>)</>
+                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong>{formatDateToBE(latestAvailableDate)}</strong>)</>
                 )}
               </span>
             </div>
@@ -520,7 +573,7 @@ export default function BeverageDashboard() {
                 onClick={() => setSelectedDate(latestAvailableDate)}
                 className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-sm"
               >
-                ดูวันที่ล่าสุด ({latestAvailableDate})
+                ดูวันที่ล่าสุด ({formatDateToBE(latestAvailableDate)})
               </button>
             )}
           </div>
@@ -537,12 +590,12 @@ export default function BeverageDashboard() {
             highlight={true}
           />
 
-          {/* Total Sales */}
+          {/* Total Sales - [MODIFIED] Shows B.E. year label */}
           <KpiCard 
             title="ยอดขายรวม (Total)" 
             value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
             icon={<DollarSign size={24} className="text-emerald-500" />}
-            trend={filterMode === 'year' && selectedYear ? `ปี ${parseInt(selectedYear) + 543}` : selectedDate ? `วันที่ ${selectedDate}` : "ยอดรวมทั้งหมด"}
+            trend={filterMode === 'year' && selectedYear ? `ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}` : selectedDate ? `วันที่ ${formatDateToBE(selectedDate)}` : "ยอดรวมทั้งหมด"}
           />
 
           {/* Total Orders */}
@@ -630,7 +683,10 @@ export default function BeverageDashboard() {
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <h2 className="text-lg font-semibold text-slate-800">รายการออเดอร์ (Orders 2023)</h2>
+            {/* [MODIFIED] Section header updated to B.E. format */}
+            <h2 className="text-lg font-semibold text-slate-800">
+              รายการออเดอร์ (ประจำปี พ.ศ. {parseInt(selectedYear || '2023') + 543})
+            </h2>
             <div className="relative w-full sm:w-64">
               <input 
                 type="text" 
@@ -672,8 +728,9 @@ export default function BeverageDashboard() {
                 ) : displayData.length > 0 ? (
                   displayData.map((order, index) => (
                     <tr key={order.billId || index} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
+                      {/* [MODIFIED] Date-time column converted to Thai B.E. via formatDateToBE */}
                       <td className="px-6 py-4 whitespace-nowrap text-slate-500 text-xs">
-                        {order.datetime || '-'}
+                        {formatDateToBE(order.datetime)}
                       </td>
                       <td className="px-6 py-4 font-mono text-xs text-slate-500">
                         {order.billId}
@@ -722,7 +779,7 @@ export default function BeverageDashboard() {
                           <p className="text-sm font-semibold">{error}</p>
                         </div>
                       ) : (
-                        "ไม่พบข้อมูลในปี 2023 (No 2023 data found)"
+                        `ไม่พบข้อมูลใน พ.ศ. ${parseInt(selectedYear || '2023') + 543}`
                       )}
                     </td>
                   </tr>
