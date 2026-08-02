@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line
+  BarChart, Bar, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, LabelList
 } from 'recharts';
-import { ShoppingCart, DollarSign, TrendingUp, Package, AlertCircle, MapPin, CreditCard, CheckCircle2, Calendar, Sun } from 'lucide-react';
+import { ShoppingCart, DollarSign, TrendingUp, Package, AlertCircle, MapPin, CreditCard, CheckCircle2, Calendar, Sun, BarChart2, LineChart as LineChartIcon, Layers, Sliders, Eye } from 'lucide-react';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 const PAYMENT_COLORS = {
@@ -31,13 +31,12 @@ const normalizeOrder = (raw) => {
   };
 };
 
-// [MODIFIED] Universal date parser bug fix for YYYY-MM-DD and timezone strings
+// Universal date parser for internal logic (YYYY-MM-DD comparison)
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
-    // If ISO timestamp with timezone (T or Z), convert via Date object to local timezone
     if (str.includes('T')) {
       const d = new Date(str);
       if (!isNaN(d.getTime())) {
@@ -51,7 +50,6 @@ const formatDateForComparison = (datetimeString) => {
 
     const dateOnly = str.split(' ')[0].trim();
 
-    // DD/MM/YYYY or DD/MM/2569
     if (dateOnly.includes('/')) {
       const parts = dateOnly.split('/');
       if (parts.length >= 3) {
@@ -68,18 +66,16 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
-    // YYYY-MM-DD or DD-MM-YYYY
     if (dateOnly.includes('-')) {
       const parts = dateOnly.split('-');
       if (parts.length >= 3) {
-        if (parts[0].length === 4) { // YYYY-MM-DD
+        if (parts[0].length === 4) {
           let year = parseInt(parts[0], 10);
           if (year > 2400) year -= 543;
           const month = String(parseInt(parts[1], 10)).padStart(2, '0');
-          // [MODIFIED] Fixed typo: parts[2] is day, not parts[0]
           const day = String(parseInt(parts[2], 10)).padStart(2, '0'); 
           return `${year}-${month}-${day}`;
-        } else { // DD-MM-YYYY
+        } else {
           let year = parseInt(parts[2], 10);
           if (year > 2400) year -= 543;
           const month = String(parseInt(parts[1], 10)).padStart(2, '0');
@@ -149,7 +145,6 @@ const formatDateToBE = (datetimeString) => {
       return datetimeString;
     }
 
-    // Convert A.D. (ค.ศ.) to B.E. (พ.ศ.) if year < 2400
     if (year < 2400) {
       year += 543;
     }
@@ -175,6 +170,11 @@ export default function BeverageDashboard() {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedYear, setSelectedYear] = useState(''); 
   
+  // [MODIFIED] Chart customization settings
+  const [chartType, setChartType] = useState('bar'); // 'bar' | 'area' | 'line'
+  const [chartMetric, setChartMetric] = useState('sales'); // 'sales' | 'orders'
+  const [showDataLabels, setShowDataLabels] = useState(true);
+
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
@@ -248,7 +248,7 @@ export default function BeverageDashboard() {
     fetchData();
   }, []);
 
-  // [MODIFIED] Auto-detect and set selectedYear to the latest year available in data
+  // Auto-detect and set selectedYear to the latest year available in data
   useEffect(() => {
     if (data.length > 0 && !selectedYear) {
       const years = data
@@ -306,7 +306,6 @@ export default function BeverageDashboard() {
     let isFallbackToLatest = false;
     let todayOrders = getOrdersForIsoDate(todayIso);
 
-    // Fallback to latest date if today has 0 orders
     if (todayOrders.length === 0 && latestAvailableDate) {
       targetIso = latestAvailableDate;
       todayOrders = getOrdersForIsoDate(latestAvailableDate);
@@ -397,6 +396,7 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
+  // [MODIFIED] Aggregates both Sales & Order Count for configurable chart rendering
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach(item => {
@@ -447,9 +447,10 @@ export default function BeverageDashboard() {
 
         if (sortKey) {
           if (!trendMap[sortKey]) {
-            trendMap[sortKey] = { time: displayKey, sales: 0 };
+            trendMap[sortKey] = { time: displayKey, sales: 0, orders: 0 };
           }
           trendMap[sortKey].sales += (parseFloat(item.total) || 0);
+          trendMap[sortKey].orders += 1;
         }
       }
     });
@@ -460,7 +461,7 @@ export default function BeverageDashboard() {
 
   let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
   if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
-  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (Monthly Sales Trend) ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
+  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
 
   const currentYearBE = selectedYear ? parseInt(selectedYear) + 543 : '';
 
@@ -648,21 +649,172 @@ export default function BeverageDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* [MODIFIED] Enhanced & Configurable Chart Card */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
-            <h2 className="text-lg font-semibold mb-4 text-slate-800">{chartTitle}</h2>
-            <div className="h-[300px] w-full">
+            
+            {/* Chart Toolbar Controls */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                <Sliders size={18} className="text-indigo-500" />
+                {chartTitle}
+              </h2>
+
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                
+                {/* Metric Selector (ยอดขาย / จำนวนออเดอร์) */}
+                <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-medium">
+                  <button
+                    onClick={() => setChartMetric('sales')}
+                    className={`px-3 py-1.5 rounded-md transition-all ${chartMetric === 'sales' ? 'bg-white text-indigo-600 shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    ยอดขาย (฿)
+                  </button>
+                  <button
+                    onClick={() => setChartMetric('orders')}
+                    className={`px-3 py-1.5 rounded-md transition-all ${chartMetric === 'orders' ? 'bg-white text-indigo-600 shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    ออเดอร์
+                  </button>
+                </div>
+
+                {/* Chart Type Selector (แท่ง / พื้นที่ / เส้น) */}
+                <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-medium">
+                  <button
+                    onClick={() => setChartType('bar')}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition-all ${chartType === 'bar' ? 'bg-white text-indigo-600 shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700'}`}
+                    title="กราฟแท่ง (Bar)"
+                  >
+                    <BarChart2 size={14} /> แท่ง
+                  </button>
+                  <button
+                    onClick={() => setChartType('area')}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition-all ${chartType === 'area' ? 'bg-white text-indigo-600 shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700'}`}
+                    title="กราฟพื้นที่ (Area)"
+                  >
+                    <Layers size={14} /> พื้นที่
+                  </button>
+                  <button
+                    onClick={() => setChartType('line')}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition-all ${chartType === 'line' ? 'bg-white text-indigo-600 shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700'}`}
+                    title="กราฟเส้น (Line)"
+                  >
+                    <LineChartIcon size={14} /> เส้น
+                  </button>
+                </div>
+
+                {/* Show Data Labels Switch */}
+                <button
+                  onClick={() => setShowDataLabels(!showDataLabels)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                    showDataLabels ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                  title="แสดง/ซ่อนตัวเลขบนกราฟ"
+                >
+                  <Eye size={14} /> {showDataLabels ? 'ตัวเลข: เปิด' : 'ตัวเลข: ปิด'}
+                </button>
+              </div>
+            </div>
+
+            {/* Dynamic Interactive Chart Render */}
+            <div className="h-[320px] w-full">
               {chartsData.trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartsData.trendData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(value) => `฿${value}`} />
-                    <RechartsTooltip 
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      formatter={(value) => [`฿${value}`, 'Sales']}
-                    />
-                    <Line type="monotone" dataKey="sales" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: 'white'}} activeDot={{ r: 8 }} />
-                  </LineChart>
+                  
+                  {chartType === 'bar' ? (
+                    <BarChart data={chartsData.trendData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#64748b', fontSize: 12}} 
+                        tickFormatter={(val) => chartMetric === 'sales' ? `฿${val.toLocaleString()}` : val} 
+                      />
+                      <RechartsTooltip 
+                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                        formatter={(value) => [
+                          chartMetric === 'sales' ? `฿${Number(value).toLocaleString(undefined, {minimumFractionDigits: 2})}` : `${value} ออเดอร์`,
+                          chartMetric === 'sales' ? 'ยอดขาย' : 'จำนวนออเดอร์'
+                        ]}
+                      />
+                      <Bar dataKey={chartMetric} fill="#3b82f6" radius={[8, 8, 0, 0]} maxBarSize={45}>
+                        {showDataLabels && (
+                          <LabelList 
+                            dataKey={chartMetric} 
+                            position="top" 
+                            formatter={(val) => chartMetric === 'sales' ? `฿${Number(val).toLocaleString()}` : val}
+                            style={{ fontSize: 11, fontWeight: 600, fill: '#1e40af' }} 
+                          />
+                        )}
+                      </Bar>
+                    </BarChart>
+
+                  ) : chartType === 'area' ? (
+                    <AreaChart data={chartsData.trendData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
+                      <defs>
+                        <linearGradient id="chartMetricGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#64748b', fontSize: 12}} 
+                        tickFormatter={(val) => chartMetric === 'sales' ? `฿${val.toLocaleString()}` : val} 
+                      />
+                      <RechartsTooltip 
+                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                        formatter={(value) => [
+                          chartMetric === 'sales' ? `฿${Number(value).toLocaleString(undefined, {minimumFractionDigits: 2})}` : `${value} ออเดอร์`,
+                          chartMetric === 'sales' ? 'ยอดขาย' : 'จำนวนออเดอร์'
+                        ]}
+                      />
+                      <Area type="monotone" dataKey={chartMetric} stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#chartMetricGradient)">
+                        {showDataLabels && (
+                          <LabelList 
+                            dataKey={chartMetric} 
+                            position="top" 
+                            formatter={(val) => chartMetric === 'sales' ? `฿${Number(val).toLocaleString()}` : val}
+                            style={{ fontSize: 11, fontWeight: 600, fill: '#1e40af' }} 
+                          />
+                        )}
+                      </Area>
+                    </AreaChart>
+
+                  ) : (
+                    <LineChart data={chartsData.trendData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#64748b', fontSize: 12}} 
+                        tickFormatter={(val) => chartMetric === 'sales' ? `฿${val.toLocaleString()}` : val} 
+                      />
+                      <RechartsTooltip 
+                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                        formatter={(value) => [
+                          chartMetric === 'sales' ? `฿${Number(value).toLocaleString(undefined, {minimumFractionDigits: 2})}` : `${value} ออเดอร์`,
+                          chartMetric === 'sales' ? 'ยอดขาย' : 'จำนวนออเดอร์'
+                        ]}
+                      />
+                      <Line type="monotone" dataKey={chartMetric} stroke="#3b82f6" strokeWidth={3} dot={{r: 5, fill: '#3b82f6', strokeWidth: 2, stroke: 'white'}} activeDot={{ r: 8 }}>
+                        {showDataLabels && (
+                          <LabelList 
+                            dataKey={chartMetric} 
+                            position="top" 
+                            formatter={(val) => chartMetric === 'sales' ? `฿${Number(val).toLocaleString()}` : val}
+                            style={{ fontSize: 11, fontWeight: 600, fill: '#1e40af' }} 
+                          />
+                        )}
+                      </Line>
+                    </LineChart>
+                  )}
+
                 </ResponsiveContainer>
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-slate-400">
@@ -676,14 +828,14 @@ export default function BeverageDashboard() {
             <h2 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2">
               <CreditCard size={18} className="text-slate-400" /> ช่องทางชำระเงิน
             </h2>
-            <div className="h-[250px] w-full">
+            <div className="h-[280px] w-full">
               {chartsData.paymentData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={chartsData.paymentData}
                       cx="50%"
-                      cy="50%"
+                      cy="45%"
                       innerRadius={60}
                       outerRadius={90}
                       paddingAngle={5}
@@ -694,7 +846,8 @@ export default function BeverageDashboard() {
                       ))}
                     </Pie>
                     <RechartsTooltip 
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                      formatter={(value) => [`${value} รายการ`, 'จำนวนออเดอร์']}
                     />
                     <Legend verticalAlign="bottom" height={36} iconType="circle" />
                   </PieChart>
