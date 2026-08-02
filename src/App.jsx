@@ -31,13 +31,14 @@ const normalizeOrder = (raw) => {
   };
 };
 
-// Universal date parser for internal logic (YYYY-MM-DD comparison)
+// [MODIFIED] Smart Bulletproof Date Parser (Fixes August being misparsed as January)
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
-    if (str.includes('T')) {
+    // ISO timestamp format (e.g. 2026-08-01T10:00:00.000Z)
+    if (str.includes('T') || str.includes('Z')) {
       const d = new Date(str);
       if (!isNaN(d.getTime())) {
         let y = d.getFullYear();
@@ -50,41 +51,56 @@ const formatDateForComparison = (datetimeString) => {
 
     const dateOnly = str.split(' ')[0].trim();
 
-    if (dateOnly.includes('/')) {
-      const parts = dateOnly.split('/');
-      if (parts.length >= 3) {
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10);
-        let year = parseInt(parts[2], 10);
+    const buildIso = (y, m, d) => {
+      let year = parseInt(y, 10);
+      let month = parseInt(m, 10);
+      let day = parseInt(d, 10);
 
-        if (isNaN(day) || isNaN(month) || isNaN(year)) return "";
-        if (year > 2400) year -= 543;
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return "";
+      if (year > 2400) year -= 543;
+      if (year < 100) year += 2000;
 
-        const formattedMonth = String(month).padStart(2, '0');
-        const formattedDay = String(day).padStart(2, '0');
-        return `${year}-${formattedMonth}-${formattedDay}`;
+      const formattedMonth = String(month).padStart(2, '0');
+      const formattedDay = String(day).padStart(2, '0');
+      return `${year}-${formattedMonth}-${formattedDay}`;
+    };
+
+    // Split date by /, -, or .
+    const parts = dateOnly.split(/[\/\-\.]/);
+    if (parts.length >= 3) {
+      const p0 = parseInt(parts[0], 10);
+      const p1 = parseInt(parts[1], 10);
+      const p2 = parseInt(parts[2], 10);
+
+      // Format YYYY-MM-DD or YYYY/MM/DD (p0 is 4-digit year)
+      if (parts[0].length === 4 || p0 > 1900) {
+        return buildIso(p0, p1, p2);
       }
-    }
 
-    if (dateOnly.includes('-')) {
-      const parts = dateOnly.split('-');
-      if (parts.length >= 3) {
-        if (parts[0].length === 4) {
-          let year = parseInt(parts[0], 10);
-          if (year > 2400) year -= 543;
-          const month = String(parseInt(parts[1], 10)).padStart(2, '0');
-          const day = String(parseInt(parts[2], 10)).padStart(2, '0'); 
-          return `${year}-${month}-${day}`;
-        } else {
-          let year = parseInt(parts[2], 10);
-          if (year > 2400) year -= 543;
-          const month = String(parseInt(parts[1], 10)).padStart(2, '0');
-          const day = String(parseInt(parts[0], 10)).padStart(2, '0');
-          return `${year}-${month}-${day}`;
+      // Format DD/MM/YYYY or MM/DD/YYYY (p2 is 4-digit year)
+      if (parts[2].length === 4 || p2 > 1900 || p2 > 50) {
+        let day, month;
+        
+        // If p0 > 12 -> p0 MUST be Day (e.g. 25/08/2026)
+        if (p0 > 12) {
+          day = p0;
+          month = p1;
+        } 
+        // If p1 > 12 -> p1 MUST be Day (e.g. 08/25/2026)
+        else if (p1 > 12) {
+          month = p0;
+          day = p1;
+        } 
+        // Standard Thai format: DD/MM/YYYY -> p0 = Day, p1 = Month
+        else {
+          day = p0;
+          month = p1;
         }
+        return buildIso(p2, month, day);
       }
     }
 
+    // Fallback to Date object parsing
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
       let y = d.getFullYear();
@@ -100,60 +116,26 @@ const formatDateForComparison = (datetimeString) => {
   }
 };
 
-// Helper function to convert any date/time string to Thai B.E. (พ.ศ.) format for UI display
+// [MODIFIED] Helper function to convert any date/time string to Thai B.E. (พ.ศ.) format for UI display
 const formatDateToBE = (datetimeString) => {
   if (!datetimeString) return '-';
   try {
-    let str = String(datetimeString).trim();
+    const isoDate = formatDateForComparison(datetimeString);
+    if (!isoDate) return datetimeString;
+
+    const [yyyy, mm, dd] = isoDate.split('-');
+    const yearBE = parseInt(yyyy, 10) + 543;
+
     let timePart = '';
-
+    const str = String(datetimeString).trim();
     if (str.includes(' ')) {
-      const parts = str.split(' ');
-      str = parts[0];
-      timePart = parts.slice(1).join(' ');
+      timePart = ' ' + str.split(' ')[1];
     } else if (str.includes('T')) {
-      const parts = str.split('T');
-      str = parts[0];
-      timePart = parts[1].split('.')[0];
+      const t = str.split('T')[1];
+      if (t) timePart = ' ' + t.split('.')[0];
     }
 
-    let year, month, day;
-
-    if (str.includes('/')) {
-      const parts = str.split('/');
-      if (parts.length >= 3) {
-        day = parseInt(parts[0], 10);
-        month = parseInt(parts[1], 10);
-        year = parseInt(parts[2], 10);
-      }
-    } else if (str.includes('-')) {
-      const parts = str.split('-');
-      if (parts.length >= 3) {
-        if (parts[0].length === 4) {
-          year = parseInt(parts[0], 10);
-          month = parseInt(parts[1], 10);
-          day = parseInt(parts[2], 10);
-        } else {
-          day = parseInt(parts[0], 10);
-          month = parseInt(parts[1], 10);
-          year = parseInt(parts[2], 10);
-        }
-      }
-    }
-
-    if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
-      return datetimeString;
-    }
-
-    if (year < 2400) {
-      year += 543;
-    }
-
-    const dd = String(day).padStart(2, '0');
-    const mm = String(month).padStart(2, '0');
-    const yyyy = String(year);
-
-    return timePart ? `${dd}/${mm}/${yyyy} ${timePart}` : `${dd}/${mm}/${yyyy}`;
+    return `${dd}/${mm}/${yearBE}${timePart}`;
   } catch (e) {
     return datetimeString;
   }
@@ -396,7 +378,7 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
-  // [MODIFIED] Enhanced hourly extraction to strictly map calendar-selected dates
+  // Aggregates both Sales & Order Count for configurable chart rendering
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach(item => {
@@ -440,7 +422,6 @@ export default function BeverageDashboard() {
             sortKey = String(hourNum).padStart(2, '0');
             displayKey = `${sortKey}:00 น.`;
           } else {
-            // Fallback for orders on that calendar date without explicit hour strings
             sortKey = '00_daily';
             displayKey = 'รวมยอดตามปฏิทิน';
           }
@@ -471,7 +452,6 @@ export default function BeverageDashboard() {
     return { paymentData, trendData };
   }, [displayData, filterMode, selectedDate, selectedYear]);
 
-  // [MODIFIED] Chart title synchronized with selected calendar date
   let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
   if (filterMode === 'day' && selectedDate) {
     chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
@@ -545,7 +525,6 @@ export default function BeverageDashboard() {
                     <Calendar size={18} />
                 </div>
                 
-                {/* [MODIFIED] Calendar date picker automatically switches filterMode to 'day' */}
                 {filterMode === 'day' && (
                   <input 
                       type="date" 
@@ -887,7 +866,6 @@ export default function BeverageDashboard() {
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-            {/* [MODIFIED] Synchronized table header when calendar date is selected */}
             <h2 className="text-lg font-semibold text-slate-800">
               รายการออเดอร์ {
                 filterMode === 'day' && selectedDate 
