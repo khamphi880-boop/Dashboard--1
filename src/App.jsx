@@ -80,6 +80,27 @@ const formatDateForComparison = (datetimeString) => {
   }
 };
 
+// [ADDED] Normalize one order object coming from the GAS backend (or from a
+// header-based sheet dump) into the field names the rest of this component uses.
+// This is the actual fix: doGet() in the Apps Script returns objects shaped like
+// { timestampStr, orderId, lineName, itemsSummary, total, paymentMethod, status,
+//   deliveryLocation, address, note } — NOT { datetime, billId, customer, items,
+//   payment, deliveryPoint, remark } which is what the UI reads everywhere else.
+// Without this mapping, item.datetime is always undefined, so every date filter
+// (including "today's sales") silently matches nothing.
+const normalizeOrder = (row) => ({
+  datetime: row.datetime ?? row.timestampStr ?? row['วัน-เวลา'] ?? '',
+  billId: row.billId ?? row.orderId ?? row['รหัสบิล'] ?? '',
+  customer: row.customer ?? row.lineName ?? row['ชื่อลูกค้า'] ?? '',
+  items: row.items ?? row.itemsSummary ?? row['รายการสินค้า'] ?? '',
+  total: parseFloat(row.total) || 0,
+  payment: row.payment ?? row.paymentMethod ?? row['ช่องทางชำระ'] ?? '',
+  status: row.status ?? row['สถานะออร์เดอร์'] ?? '',
+  deliveryPoint: row.deliveryPoint ?? row.deliveryLocation ?? row['จุดจัดส่ง'] ?? '',
+  address: row.address ?? row['ที่อยู่จัดส่ง'] ?? '',
+  remark: row.remark ?? row.note ?? row['หมายเหตุ'] ?? ''
+});
+
 export default function BeverageDashboard() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -141,7 +162,12 @@ export default function BeverageDashboard() {
              setData(mappedData);
              setIsLive(true); 
           } else {
-            setData(parsedData);
+            // [FIXED] Previously: setData(parsedData) — kept the backend's raw field
+            // names (timestampStr, orderId, lineName, ...) which don't match what
+            // the rest of the component reads (datetime, billId, customer, ...).
+            // Now we normalize every row first.
+            const mappedData = parsedData.map(normalizeOrder);
+            setData(mappedData);
             setIsLive(true); 
           }
         } else {
