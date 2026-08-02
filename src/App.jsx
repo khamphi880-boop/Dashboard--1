@@ -12,48 +12,53 @@ const PAYMENT_COLORS = {
   "เงินสด": "#f59e0b"
 };
 
-// [MODIFIED] Ultra-robust date parser that strips time completely (both space and ISO 'T' formats)
+// [UPDATED] Ultra-robust date parser handling BE/CE, D/M/Y, M/D/Y and commas
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
-    // 1. Strip ISO time part if present
-    // [FIXED] Was `str.includes('T')`, which false-positives on the letter 'T'
-    // inside "GMT" / "(Indochina Time)" in JS Date.toString() output like
-    // "Sun Jan 08 2569 17:28:46 GMT+0700 (Indochina Time)". That corrupted the
-    // string (cut it off mid "GMT") before it ever reached the fallback parser
-    // below, so formatDateForComparison always returned "" for that format —
-    // which is exactly why "today's sales" (and every other date filter)
-    // never matched anything. Only strip when it's genuinely an ISO datetime.
+    // 1. Handle ISO format (e.g. "2026-08-02T15:34:19")
     if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
-      str = str.split('T')[0];
+      return str.split('T')[0];
     }
 
-    // 2. Strip space time part if present (e.g. "2/8/2569 12:20:11" -> "2/8/2569")
-    const dateOnly = str.split(' ')[0].trim();
+    // Clean out commas (e.g. "2/8/2569, 15:34:19" -> "2/8/2569 15:34:19")
+    const cleanStr = str.replace(/,/g, '');
+
+    // 2. Extract first token before space
+    const firstToken = cleanStr.split(' ')[0].trim();
 
     // 3. Handle Slash format (e.g. "2/8/2569" or "02/08/2569")
-    if (dateOnly.includes('/')) {
-      const parts = dateOnly.split('/');
+    if (firstToken.includes('/')) {
+      const parts = firstToken.split('/');
       if (parts.length >= 3) {
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10);
+        let p1 = parseInt(parts[0], 10);
+        let p2 = parseInt(parts[1], 10);
         let year = parseInt(parts[2], 10);
 
-        if (isNaN(day) || isNaN(month) || isNaN(year)) return "";
+        if (!isNaN(p1) && !isNaN(p2) && !isNaN(year)) {
+          if (year > 2400) year -= 543;
 
-        if (year > 2400) year -= 543;
+          let day = p1;
+          let month = p2;
 
-        const formattedMonth = String(month).padStart(2, '0');
-        const formattedDay = String(day).padStart(2, '0');
-        return `${year}-${formattedMonth}-${formattedDay}`;
+          // Auto detect if p2 is Day and p1 is Month (e.g., 8/25/2026)
+          if (p2 > 12 && p1 <= 12) {
+            day = p2;
+            month = p1;
+          }
+
+          const formattedMonth = String(month).padStart(2, '0');
+          const formattedDay = String(day).padStart(2, '0');
+          return `${year}-${formattedMonth}-${formattedDay}`;
+        }
       }
     }
 
     // 4. Handle Dash format (e.g. "2026-08-02" or "2569-08-02")
-    if (dateOnly.includes('-')) {
-      const parts = dateOnly.split('-');
+    if (firstToken.includes('-')) {
+      const parts = firstToken.split('-');
       if (parts.length >= 3) {
         if (parts[0].length === 4) {
           let year = parseInt(parts[0], 10);
@@ -62,17 +67,22 @@ const formatDateForComparison = (datetimeString) => {
           const day = String(parseInt(parts[2], 10)).padStart(2, '0');
           return `${year}-${month}-${day}`;
         } else {
+          let p1 = parseInt(parts[0], 10);
+          let p2 = parseInt(parts[1], 10);
           let year = parseInt(parts[2], 10);
           if (year > 2400) year -= 543;
-          const month = String(parseInt(parts[1], 10)).padStart(2, '0');
-          const day = String(parseInt(parts[0], 10)).padStart(2, '0');
-          return `${year}-${month}-${day}`;
+          let day = p1;
+          let month = p2;
+          if (p2 > 12 && p1 <= 12) { day = p2; month = p1; }
+          const mStr = String(month).padStart(2, '0');
+          const dStr = String(day).padStart(2, '0');
+          return `${year}-${mStr}-${dStr}`;
         }
       }
     }
 
-    // 5. Fallback JS Date parsing
-    const d = new Date(str);
+    // 5. Fallback JS Date parsing on full clean string
+    const d = new Date(cleanStr);
     if (!isNaN(d.getTime())) {
       let y = d.getFullYear();
       if (y > 2400) y -= 543;
@@ -87,14 +97,6 @@ const formatDateForComparison = (datetimeString) => {
   }
 };
 
-// [ADDED] Normalize one order object coming from the GAS backend (or from a
-// header-based sheet dump) into the field names the rest of this component uses.
-// This is the actual fix: doGet() in the Apps Script returns objects shaped like
-// { timestampStr, orderId, lineName, itemsSummary, total, paymentMethod, status,
-//   deliveryLocation, address, note } — NOT { datetime, billId, customer, items,
-//   payment, deliveryPoint, remark } which is what the UI reads everywhere else.
-// Without this mapping, item.datetime is always undefined, so every date filter
-// (including "today's sales") silently matches nothing.
 const normalizeOrder = (row) => ({
   datetime: row.datetime ?? row.timestampStr ?? row['วัน-เวลา'] ?? '',
   billId: row.billId ?? row.orderId ?? row['รหัสบิล'] ?? '',
@@ -169,10 +171,6 @@ export default function BeverageDashboard() {
              setData(mappedData);
              setIsLive(true); 
           } else {
-            // [FIXED] Previously: setData(parsedData) — kept the backend's raw field
-            // names (timestampStr, orderId, lineName, ...) which don't match what
-            // the rest of the component reads (datetime, billId, customer, ...).
-            // Now we normalize every row first.
             const mappedData = parsedData.map(normalizeOrder);
             setData(mappedData);
             setIsLive(true); 
@@ -212,23 +210,31 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // [MODIFIED] Ultra fail-proof Today's metrics matching (Pattern matching + Parsed comparison)
+  // [FIXED] Ultra Fail-Proof Today Calculation with Thai OS BE/CE Fix & Pattern Matching
   const todayMetrics = useMemo(() => {
     const now = new Date();
-    const d = now.getDate();
+    
+    // Ensure yCE is strictly AD (e.g. 2026), fixing Thai OS returning 2569 in getFullYear()
+    let yCE = now.getFullYear();
+    if (yCE > 2400) yCE -= 543;
+
     const m = now.getMonth() + 1;
-    const yCE = now.getFullYear();
+    const d = now.getDate();
     const yBE = yCE + 543;
 
     const todayIso = `${yCE}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-    // Text patterns for today's date in Thai Sheets (e.g. "2/8/2569", "02/08/2569", "2/8/2026", "2026-08-02")
+    // All valid text patterns for today's date in Thai Sheets
     const patterns = [
-      `${d}/${m}/${yBE}`,
-      `${d}/${m}/${yCE}`,
-      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yBE}`,
-      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yCE}`,
-      todayIso
+      `${d}/${m}/${yBE}`,            // "2/8/2569"
+      `${d}/${m}/${yCE}`,            // "2/8/2026"
+      `${m}/${d}/${yBE}`,            // "8/2/2569"
+      `${m}/${d}/${yCE}`,            // "8/2/2026"
+      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yBE}`, // "02/08/2569"
+      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yCE}`, // "02/08/2026"
+      `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${yBE}`, // "08/02/2569"
+      `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${yCE}`, // "08/02/2026"
+      todayIso                       // "2026-08-02"
     ];
 
     const todayOrders = data.filter(item => {
@@ -239,10 +245,10 @@ export default function BeverageDashboard() {
       const dt = String(item.datetime || '').trim();
       if (!dt) return false;
 
-      // Strategy 1: Direct text inclusion check (100% immune to time/timezone bugs)
+      // Strategy 1: Direct text pattern inclusion check
       if (patterns.some(p => dt.includes(p))) return true;
 
-      // Strategy 2: Formatted date comparison
+      // Strategy 2: Formatted ISO date comparison
       return formatDateForComparison(dt) === todayIso;
     });
 
@@ -250,7 +256,6 @@ export default function BeverageDashboard() {
     return { todaySales, todayCount: todayOrders.length };
   }, [data, hideCanceled]);
 
-  // [MODIFIED] Fail-proof display filter for selected date
   const displayData = useMemo(() => {
     let filtered = data;
 
