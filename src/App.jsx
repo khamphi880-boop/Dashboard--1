@@ -12,24 +12,19 @@ const PAYMENT_COLORS = {
   "เงินสด": "#f59e0b"
 };
 
-// [UPDATED] Ultra-robust date parser handling BE/CE, D/M/Y, M/D/Y and commas
+// [INTERNAL] Normalize date into ISO string (YYYY-MM-DD) for internal logic
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
-    // 1. Handle ISO format (e.g. "2026-08-02T15:34:19")
     if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
       return str.split('T')[0];
     }
 
-    // Clean out commas (e.g. "2/8/2569, 15:34:19" -> "2/8/2569 15:34:19")
     const cleanStr = str.replace(/,/g, '');
-
-    // 2. Extract first token before space
     const firstToken = cleanStr.split(' ')[0].trim();
 
-    // 3. Handle Slash format (e.g. "2/8/2569" or "02/08/2569")
     if (firstToken.includes('/')) {
       const parts = firstToken.split('/');
       if (parts.length >= 3) {
@@ -42,8 +37,6 @@ const formatDateForComparison = (datetimeString) => {
 
           let day = p1;
           let month = p2;
-
-          // Auto detect if p2 is Day and p1 is Month (e.g., 8/25/2026)
           if (p2 > 12 && p1 <= 12) {
             day = p2;
             month = p1;
@@ -56,7 +49,6 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
-    // 4. Handle Dash format (e.g. "2026-08-02" or "2569-08-02")
     if (firstToken.includes('-')) {
       const parts = firstToken.split('-');
       if (parts.length >= 3) {
@@ -81,7 +73,6 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
-    // 5. Fallback JS Date parsing on full clean string
     const d = new Date(cleanStr);
     if (!isNaN(d.getTime())) {
       let y = d.getFullYear();
@@ -95,6 +86,40 @@ const formatDateForComparison = (datetimeString) => {
   } catch (e) {
     return "";
   }
+};
+
+// [NEW] Format date to Thai BE Display (e.g. "2 ส.ค. 2569")
+const formatDisplayDateBE = (dateStr) => {
+  if (!dateStr) return "";
+  const iso = formatDateForComparison(dateStr);
+  if (!iso) return String(dateStr);
+  
+  const [yyyy, mm, dd] = iso.split('-');
+  const yearBE = parseInt(yyyy, 10) + 543;
+  const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  return `${parseInt(dd, 10)} ${monthNames[parseInt(mm, 10)]} ${yearBE}`;
+};
+
+// [NEW] Format Full Date & Time with Thai BE Year for Table Display (e.g. "2 ส.ค. 2569 15:34:19")
+const formatDateTimeDisplayBE = (rawDt) => {
+  if (!rawDt) return '-';
+  const str = String(rawDt).trim();
+  const iso = formatDateForComparison(str);
+  if (!iso) return str;
+
+  const [yyyy, mm, dd] = iso.split('-');
+  const yearBE = parseInt(yyyy, 10) + 543;
+  const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  
+  let timePart = "";
+  const cleanStr = str.replace(/,/g, '');
+  if (cleanStr.includes(' ')) {
+    timePart = " " + cleanStr.split(' ')[1];
+  } else if (cleanStr.includes('T')) {
+    timePart = " " + cleanStr.split('T')[1].substring(0, 8);
+  }
+
+  return `${parseInt(dd, 10)} ${monthNames[parseInt(mm, 10)]} ${yearBE}${timePart}`;
 };
 
 const normalizeOrder = (row) => ({
@@ -210,11 +235,8 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // [FIXED] Ultra Fail-Proof Today Calculation with Thai OS BE/CE Fix & Pattern Matching
   const todayMetrics = useMemo(() => {
     const now = new Date();
-    
-    // Ensure yCE is strictly AD (e.g. 2026), fixing Thai OS returning 2569 in getFullYear()
     let yCE = now.getFullYear();
     if (yCE > 2400) yCE -= 543;
 
@@ -224,17 +246,16 @@ export default function BeverageDashboard() {
 
     const todayIso = `${yCE}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-    // All valid text patterns for today's date in Thai Sheets
     const patterns = [
-      `${d}/${m}/${yBE}`,            // "2/8/2569"
-      `${d}/${m}/${yCE}`,            // "2/8/2026"
-      `${m}/${d}/${yBE}`,            // "8/2/2569"
-      `${m}/${d}/${yCE}`,            // "8/2/2026"
-      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yBE}`, // "02/08/2569"
-      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yCE}`, // "02/08/2026"
-      `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${yBE}`, // "08/02/2569"
-      `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${yCE}`, // "08/02/2026"
-      todayIso                       // "2026-08-02"
+      `${d}/${m}/${yBE}`,
+      `${d}/${m}/${yCE}`,
+      `${m}/${d}/${yBE}`,
+      `${m}/${d}/${yCE}`,
+      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yBE}`,
+      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yCE}`,
+      `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${yBE}`,
+      `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${yCE}`,
+      todayIso
     ];
 
     const todayOrders = data.filter(item => {
@@ -245,10 +266,8 @@ export default function BeverageDashboard() {
       const dt = String(item.datetime || '').trim();
       if (!dt) return false;
 
-      // Strategy 1: Direct text pattern inclusion check
       if (patterns.some(p => dt.includes(p))) return true;
 
-      // Strategy 2: Formatted ISO date comparison
       return formatDateForComparison(dt) === todayIso;
     });
 
@@ -371,7 +390,7 @@ export default function BeverageDashboard() {
           const [yyyy, mm] = dateFormatted.split('-');
           const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
           const yearBE = parseInt(yyyy, 10) + 543;
-          displayKey = `${monthNames[parseInt(mm, 10)]} ${yearBE.toString().slice(-2)}`;
+          displayKey = `${monthNames[parseInt(mm, 10)]} ${yearBE}`;
         } else {
           sortKey = dateFormatted;
           const [yyyy, mm, dd] = dateFormatted.split('-');
@@ -393,7 +412,7 @@ export default function BeverageDashboard() {
   }, [displayData, filterMode, selectedDate, selectedYear]);
 
   let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
-  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${selectedDate}`;
+  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDisplayDateBE(selectedDate)}`;
   if (filterMode === 'year' && selectedYear) chartTitle = "แนวโน้มยอดขายรายเดือน (Monthly Sales Trend)";
 
   return (
@@ -480,9 +499,9 @@ export default function BeverageDashboard() {
                       onChange={(e) => setSelectedYear(e.target.value)}
                       className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all appearance-none cursor-pointer"
                   >
-                      <option value="">เลือกปี (All Years)</option>
+                      <option value="">เลือกปี (ทุกปี)</option>
                       {availableYears.map(year => (
-                          <option key={year} value={year}>{parseInt(year) + 543} ({year})</option>
+                          <option key={year} value={year}>พ.ศ. {parseInt(year) + 543}</option>
                       ))}
                   </select>
                 )}
@@ -521,9 +540,9 @@ export default function BeverageDashboard() {
             <div className="flex items-center gap-2">
               <AlertCircle size={20} className="text-amber-600 shrink-0" />
               <span>
-                ยังไม่มีข้อมูลรายการออเดอร์ในวันที่ <strong>{selectedDate}</strong>
+                ยังไม่มีข้อมูลรายการออเดอร์ในวันที่ <strong>{formatDisplayDateBE(selectedDate)}</strong>
                 {latestAvailableDate && (
-                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong>{latestAvailableDate}</strong>)</>
+                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong>{formatDisplayDateBE(latestAvailableDate)}</strong>)</>
                 )}
               </span>
             </div>
@@ -532,7 +551,7 @@ export default function BeverageDashboard() {
                 onClick={() => setSelectedDate(latestAvailableDate)}
                 className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-sm"
               >
-                ดูวันที่ล่าสุด ({latestAvailableDate})
+                ดูวันที่ล่าสุด ({formatDisplayDateBE(latestAvailableDate)})
               </button>
             )}
           </div>
@@ -554,7 +573,7 @@ export default function BeverageDashboard() {
             title="ยอดขายรวม (Total)" 
             value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
             icon={<DollarSign size={24} className="text-emerald-500" />}
-            trend={selectedDate ? `วันที่ ${selectedDate}` : "ยอดรวมทั้งหมด"}
+            trend={selectedDate ? `วันที่ ${formatDisplayDateBE(selectedDate)}` : "ยอดรวมทั้งหมด"}
           />
 
           {/* Total Orders */}
@@ -685,7 +704,7 @@ export default function BeverageDashboard() {
                   displayData.map((order, index) => (
                     <tr key={order.billId || index} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-slate-500 text-xs">
-                        {order.datetime || '-'}
+                        {formatDateTimeDisplayBE(order.datetime)}
                       </td>
                       <td className="px-6 py-4 font-mono text-xs text-slate-500">
                         {order.billId}
