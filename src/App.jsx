@@ -170,9 +170,9 @@ export default function BeverageDashboard() {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedYear, setSelectedYear] = useState(''); 
   
-  // [MODIFIED] Chart customization settings
-  const [chartType, setChartType] = useState('bar'); // 'bar' | 'area' | 'line'
-  const [chartMetric, setChartMetric] = useState('sales'); // 'sales' | 'orders'
+  // Chart customization settings
+  const [chartType, setChartType] = useState('bar'); 
+  const [chartMetric, setChartMetric] = useState('sales'); 
   const [showDataLabels, setShowDataLabels] = useState(true);
 
   const [isLive, setIsLive] = useState(false);
@@ -396,7 +396,7 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
-  // [MODIFIED] Aggregates both Sales & Order Count for configurable chart rendering
+  // [MODIFIED] Enhanced hourly extraction to strictly map calendar-selected dates
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach(item => {
@@ -417,20 +417,32 @@ export default function BeverageDashboard() {
         let displayKey = '';
 
         if (isHourlyMode) {
-          let timeStr = '';
-          const rawDt = String(item.datetime);
+          let hourNum = null;
+          const rawDt = String(item.datetime || '').trim();
+
           if (rawDt.includes('T')) {
             const d = new Date(rawDt);
             if (!isNaN(d.getTime())) {
-              timeStr = String(d.getHours()).padStart(2, '0');
+              hourNum = d.getHours();
             }
           } else if (rawDt.includes(' ')) {
-            timeStr = rawDt.split(' ')[1].split(':')[0];
+            const parts = rawDt.split(' ');
+            const timePart = parts[parts.length - 1]; 
+            if (timePart && timePart.includes(':')) {
+              const h = parseInt(timePart.split(':')[0], 10);
+              if (!isNaN(h) && h >= 0 && h <= 23) {
+                hourNum = h;
+              }
+            }
           }
 
-          if (timeStr) {
-            sortKey = timeStr.padStart(2, '0');
-            displayKey = sortKey + ":00";
+          if (hourNum !== null) {
+            sortKey = String(hourNum).padStart(2, '0');
+            displayKey = `${sortKey}:00 น.`;
+          } else {
+            // Fallback for orders on that calendar date without explicit hour strings
+            sortKey = '00_daily';
+            displayKey = 'รวมยอดตามปฏิทิน';
           }
         } else if (filterMode === 'year' && selectedYear) {
           sortKey = dateFormatted.substring(0, 7);
@@ -459,9 +471,17 @@ export default function BeverageDashboard() {
     return { paymentData, trendData };
   }, [displayData, filterMode, selectedDate, selectedYear]);
 
+  // [MODIFIED] Chart title synchronized with selected calendar date
   let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
-  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
-  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
+  if (filterMode === 'day' && selectedDate) {
+    chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
+  } else if (filterMode === 'year' && selectedYear) {
+    chartTitle = `แนวโน้มยอดขายรายเดือน ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
+  } else if (filterMode === 'month' && selectedMonth) {
+    const [y, m] = selectedMonth.split('-');
+    const monthNames = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+    chartTitle = `แนวโน้มยอดขาย ประจำเดือน${monthNames[parseInt(m, 10)]} พ.ศ. ${parseInt(y) + 543}`;
+  }
 
   const currentYearBE = selectedYear ? parseInt(selectedYear) + 543 : '';
 
@@ -525,11 +545,15 @@ export default function BeverageDashboard() {
                     <Calendar size={18} />
                 </div>
                 
+                {/* [MODIFIED] Calendar date picker automatically switches filterMode to 'day' */}
                 {filterMode === 'day' && (
                   <input 
                       type="date" 
                       value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
+                      onChange={(e) => {
+                        setSelectedDate(e.target.value);
+                        setFilterMode('day');
+                      }}
                       className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
                   />
                 )}
@@ -650,7 +674,7 @@ export default function BeverageDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* [MODIFIED] Enhanced & Configurable Chart Card */}
+          {/* Enhanced & Configurable Chart Card */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
             
             {/* Chart Toolbar Controls */}
@@ -662,7 +686,7 @@ export default function BeverageDashboard() {
 
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 
-                {/* Metric Selector (ยอดขาย / จำนวนออเดอร์) */}
+                {/* Metric Selector */}
                 <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-medium">
                   <button
                     onClick={() => setChartMetric('sales')}
@@ -678,7 +702,7 @@ export default function BeverageDashboard() {
                   </button>
                 </div>
 
-                {/* Chart Type Selector (แท่ง / พื้นที่ / เส้น) */}
+                {/* Chart Type Selector */}
                 <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-medium">
                   <button
                     onClick={() => setChartType('bar')}
@@ -818,7 +842,7 @@ export default function BeverageDashboard() {
                 </ResponsiveContainer>
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-slate-400">
-                  ไม่มีข้อมูลสำหรับแสดงผลกราฟ
+                  ไม่มีข้อมูลสำหรับแสดงผลกราฟในวันที่เลือก
                 </div>
               )}
             </div>
@@ -863,8 +887,13 @@ export default function BeverageDashboard() {
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+            {/* [MODIFIED] Synchronized table header when calendar date is selected */}
             <h2 className="text-lg font-semibold text-slate-800">
-              รายการออเดอร์ {selectedYear ? `(ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})` : ''}
+              รายการออเดอร์ {
+                filterMode === 'day' && selectedDate 
+                  ? `(ประจำวันที่ ${formatDateToBE(selectedDate)})` 
+                  : selectedYear ? `(ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})` : ''
+              }
             </h2>
             <div className="relative w-full sm:w-64">
               <input 
@@ -957,7 +986,7 @@ export default function BeverageDashboard() {
                           <p className="text-sm font-semibold">{error}</p>
                         </div>
                       ) : (
-                        `ไม่พบข้อมูลใน พ.ศ. ${selectedYear ? parseInt(selectedYear) + 543 : ''}`
+                        `ไม่พบข้อมูลในวันที่เลือก (${formatDateToBE(selectedDate)})`
                       )}
                     </td>
                   </tr>
