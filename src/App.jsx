@@ -3,18 +3,13 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line
 } from 'recharts';
-import { ShoppingCart, DollarSign, TrendingUp, Package, AlertCircle, MapPin, CreditCard, CheckCircle2, Calendar, RefreshCw } from 'lucide-react';
+import { ShoppingCart, DollarSign, TrendingUp, Package, AlertCircle, MapPin, CreditCard, CheckCircle2, Calendar, Sun } from 'lucide-react';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 const PAYMENT_COLORS = {
   "ไทยช่วยไทยพลัส": "#10b981", // Emerald 500
   "โอนพร้อมเพย์": "#3b82f6", // Blue 500
   "เงินสด": "#f59e0b" // Amber 500
-};
-const DELIVERY_COLORS = {
-  "ส่งหน้าห้อง": "#8b5cf6", // Violet 500
-  "ส่งหน้าตึก": "#ec4899", // Pink 500
-  "รับเองที่ร้าน": "#14b8a6" // Teal 500
 };
 
 // [MODIFIED] Enhanced date helper to support BE (พ.ศ.), CE (ค.ศ.), slash and dash formats safely
@@ -24,7 +19,6 @@ const formatDateForComparison = (datetimeString) => {
     const trimmed = String(datetimeString).trim();
     const datePart = trimmed.split(' ')[0]; // "1/8/2569" or "2026-08-01"
 
-    // Handle ISO format YYYY-MM-DD or DD-MM-YYYY
     if (datePart.includes('-')) {
       const parts = datePart.split('-');
       if (parts[0].length === 4) {
@@ -38,13 +32,11 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
-    // Handle D/M/YYYY or DD/MM/YYYY format
     if (datePart.includes('/')) {
       const [day, month, yearRaw] = datePart.split('/');
       let year = parseInt(yearRaw, 10);
       if (isNaN(year)) return "";
       
-      // Convert BE year (> 2400) to CE year by subtracting 543
       if (year > 2400) {
         year -= 543;
       }
@@ -74,7 +66,7 @@ export default function BeverageDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
-  // [MODIFIED] Updated with new Google Apps Script Web App URL
+  // [MODIFIED] Live Google Apps Script API Endpoint
   const DATA_URL = "https://script.google.com/macros/s/AKfycbzcNRoFsQ2gkzcLQ21qQdYx1VR8S0m1xMj3hN2TJFkp2Dx2e7wrVc9MInQtssJEgeL0/exec";
 
   useEffect(() => {
@@ -104,17 +96,19 @@ export default function BeverageDashboard() {
              const mappedData = parsedData.slice(1).map(row => {
                 const obj = {};
                 headers.forEach((header, index) => {
-                   if (header === 'วัน-เวลา') obj.datetime = row[index];
-                   else if (header === 'รหัสบิล') obj.billId = row[index];
-                   else if (header === 'ชื่อลูกค้า') obj.customer = row[index];
-                   else if (header === 'รายการสินค้า') obj.items = row[index];
-                   else if (header === 'ยอดรวม (บาท)') obj.total = parseFloat(row[index]) || 0;
-                   else if (header === 'ช่องทางชำระ') obj.payment = row[index];
-                   else if (header === 'สถานะออเดอร์') obj.status = row[index];
-                   else if (header === 'จุดจัดส่ง') obj.deliveryPoint = row[index];
-                   else if (header === 'ที่อยู่จัดส่ง') obj.address = row[index];
-                   else if (header === 'หมายเหตุ') obj.remark = row[index];
-                   else obj[header] = row[index];
+                   const cleanHeader = String(header || '').trim();
+                   // [MODIFIED] Flexible header matching to prevent missing data fields
+                   if (cleanHeader.includes('วัน-เวลา') || cleanHeader.includes('เวลา')) obj.datetime = row[index];
+                   else if (cleanHeader.includes('รหัสบิล') || cleanHeader.includes('บิล')) obj.billId = row[index];
+                   else if (cleanHeader.includes('ชื่อลูกค้า') || cleanHeader.includes('ลูกค้า')) obj.customer = row[index];
+                   else if (cleanHeader.includes('รายการ')) obj.items = row[index];
+                   else if (cleanHeader.includes('ยอดรวม')) obj.total = parseFloat(row[index]) || 0;
+                   else if (cleanHeader.includes('ช่องทางชำระ') || cleanHeader.includes('ชำระ')) obj.payment = row[index];
+                   else if (cleanHeader.includes('สถานะ')) obj.status = row[index];
+                   else if (cleanHeader.includes('จุดจัดส่ง')) obj.deliveryPoint = row[index];
+                   else if (cleanHeader.includes('ที่อยู่')) obj.address = row[index];
+                   else if (cleanHeader.includes('หมายเหตุ')) obj.remark = row[index];
+                   else obj[cleanHeader] = row[index];
                 });
                 return obj;
              });
@@ -159,6 +153,28 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
+  // [MODIFIED] Calculate Today's date string (YYYY-MM-DD)
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+
+  // [MODIFIED] Dedicated Today's Sales and Today's Orders metrics calculation
+  const todayMetrics = useMemo(() => {
+    const todayOrders = data.filter(item => {
+      const status = item.status || '';
+      const isCanceled = status.includes('ยกเลิก') || status.toLowerCase().includes('cancel');
+      if (hideCanceled && isCanceled) return false;
+      return formatDateForComparison(item.datetime) === todayStr;
+    });
+
+    const todaySales = todayOrders.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
+    return { todaySales, todayCount: todayOrders.length };
+  }, [data, todayStr, hideCanceled]);
+
   const displayData = useMemo(() => {
     let filtered = data;
 
@@ -189,6 +205,7 @@ export default function BeverageDashboard() {
     return filtered;
   }, [data, searchTerm, selectedDate, selectedMonth, selectedYear, hideCanceled, filterMode]);
 
+  // [MODIFIED] Robust item counting and metrics calculation
   const metrics = useMemo(() => {
     const totalSales = displayData.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
     const totalOrders = displayData.length;
@@ -196,38 +213,37 @@ export default function BeverageDashboard() {
     
     let totalItems = 0;
     displayData.forEach(order => {
-        if(order.items) {
-           const lines = order.items.split('\n');
-           lines.forEach(line => {
-               const match = line.match(/^(\d+)x/);
-               if (match && match[1]) {
-                   totalItems += parseInt(match[1], 10);
-               } else {
-                   totalItems += 1;
-               }
-           });
-        }
+      const itemsStr = order.items || order['รายการสินค้า'] || order['รายการ'] || '';
+      if (itemsStr) {
+        const lines = String(itemsStr).split(/\n|,/);
+        lines.forEach(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return;
+          const match = trimmed.match(/^(\d+)\s*x/i) || trimmed.match(/x\s*(\d+)/i);
+          if (match && match[1]) {
+            totalItems += parseInt(match[1], 10);
+          } else {
+            totalItems += 1;
+          }
+        });
+      }
     });
 
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
+  // [MODIFIED] Smart Charts Data with automatic Daily fallback when no specific day is filtered
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach(item => {
-      const pm = item.payment || 'Unknown';
+      const pm = item.payment || 'ไม่ระบุ';
       paymentMap[pm] = (paymentMap[pm] || 0) + 1;
     });
     const paymentData = Object.keys(paymentMap).map(key => ({ name: key, value: paymentMap[key] }));
 
-    const deliveryMap = {};
-    displayData.forEach(item => {
-      const dp = item.deliveryPoint || 'Unknown';
-      deliveryMap[dp] = (deliveryMap[dp] || 0) + 1;
-    });
-    const deliveryData = Object.keys(deliveryMap).map(key => ({ name: key, value: deliveryMap[key] }));
-
     const trendMap = {};
+    const isHourlyMode = filterMode === 'day' && selectedDate;
+
     displayData.forEach(item => {
       if (item.datetime) {
         const dateFormatted = formatDateForComparison(item.datetime);
@@ -236,23 +252,26 @@ export default function BeverageDashboard() {
         let sortKey = '';
         let displayKey = '';
 
-        if (filterMode === 'day') {
+        if (isHourlyMode) {
+          // Hourly grouping for specific selected date
           const timePart = item.datetime.split(' ')[1];
           if (timePart) {
             sortKey = timePart.split(':')[0];
             displayKey = sortKey + ":00";
           }
-        } else if (filterMode === 'month') {
-          sortKey = dateFormatted;
-          const [yyyy, mm, dd] = dateFormatted.split('-');
-          const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-          displayKey = `${parseInt(dd, 10)} ${monthNames[parseInt(mm, 10)]}`;
-        } else if (filterMode === 'year') {
+        } else if (filterMode === 'year' && selectedYear) {
+          // Monthly grouping for specific year
           sortKey = dateFormatted.substring(0, 7);
           const [yyyy, mm] = dateFormatted.split('-');
           const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
           const yearBE = parseInt(yyyy, 10) + 543;
           displayKey = `${monthNames[parseInt(mm, 10)]} ${yearBE.toString().slice(-2)}`;
+        } else {
+          // Default: Daily grouping for All-time or Month filter
+          sortKey = dateFormatted;
+          const [yyyy, mm, dd] = dateFormatted.split('-');
+          const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+          displayKey = `${parseInt(dd, 10)} ${monthNames[parseInt(mm, 10)]}`;
         }
 
         if (sortKey) {
@@ -265,12 +284,12 @@ export default function BeverageDashboard() {
     });
     const trendData = Object.keys(trendMap).sort().map(key => trendMap[key]);
 
-    return { paymentData, deliveryData, trendData };
-  }, [displayData, filterMode]);
+    return { paymentData, trendData };
+  }, [displayData, filterMode, selectedDate, selectedYear]);
 
-  let chartTitle = "แนวโน้มยอดขายรายชั่วโมง (Hourly Sales Trend)";
-  if (filterMode === 'month') chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
-  if (filterMode === 'year') chartTitle = "แนวโน้มยอดขายรายเดือน (Monthly Sales Trend)";
+  let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
+  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${selectedDate}`;
+  if (filterMode === 'year' && selectedYear) chartTitle = "แนวโน้มยอดขายรายเดือน (Monthly Sales Trend)";
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
@@ -392,6 +411,7 @@ export default function BeverageDashboard() {
           </div>
         </header>
 
+        {/* Notification Banner when filtered date has 0 records */}
         {data.length > 0 && displayData.length === 0 && filterMode === 'day' && selectedDate && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm shadow-sm">
             <div className="flex items-center gap-2">
@@ -414,32 +434,51 @@ export default function BeverageDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* [MODIFIED] KPI Cards Grid with Today's Sales highlighted */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          
+          {/* Card 1: Today's Sales */}
           <KpiCard 
-            title="ยอดขายรวม (Total Sales)" 
+            title="ยอดขายวันนี้ (Today)" 
+            value={`฿${todayMetrics.todaySales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
+            icon={<Sun size={24} className="text-amber-500" />}
+            trend={`${todayMetrics.todayCount} ออเดอร์วันนี้`}
+            highlight={true}
+          />
+
+          {/* Card 2: Total Sales */}
+          <KpiCard 
+            title="ยอดขายรวม (Total)" 
             value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
             icon={<DollarSign size={24} className="text-emerald-500" />}
-            trend={data.length > 0 ? "อัปเดตล่าสุด" : "รอข้อมูล"}
-            trendUp={true}
+            trend={selectedDate ? `วันที่ ${selectedDate}` : "ยอดรวมทั้งหมด"}
           />
+
+          {/* Card 3: Total Orders */}
           <KpiCard 
-            title="ออเดอร์ทั้งหมด (Total Orders)" 
+            title="ออเดอร์ทั้งหมด (Orders)" 
             value={metrics.totalOrders} 
             icon={<ShoppingCart size={24} className="text-blue-500" />}
           />
+
+          {/* Card 4: Total Items */}
           <KpiCard 
-            title="จำนวนสินค้า (Total Items)" 
+            title="จำนวนสินค้า (Items)" 
             value={metrics.totalItems} 
             icon={<Package size={24} className="text-purple-500" />}
           />
+
+          {/* Card 5: Avg Order */}
           <KpiCard 
-            title="ยอดเฉลี่ยต่อบิล (Avg. Order)" 
+            title="ยอดเฉลี่ย/บิล (Avg.)" 
             value={`฿${metrics.avgOrderValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
-            icon={<TrendingUp size={24} className="text-amber-500" />}
+            icon={<TrendingUp size={24} className="text-teal-500" />}
           />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Sales Trend Chart */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
             <h2 className="text-lg font-semibold mb-4 text-slate-800">{chartTitle}</h2>
             <div className="h-[300px] w-full">
@@ -464,6 +503,7 @@ export default function BeverageDashboard() {
             </div>
           </div>
 
+          {/* Payment Methods Chart */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
             <h2 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2">
               <CreditCard size={18} className="text-slate-400" /> ช่องทางชำระเงิน
@@ -520,7 +560,7 @@ export default function BeverageDashboard() {
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-slate-500 uppercase bg-slate-50/50 border-b border-slate-100">
                 <tr>
-                  <th scope="col" className="px-6 py-4 font-medium">เวลา (Time)</th>
+                  <th scope="col" className="px-6 py-4 font-medium">วัน-เวลา</th>
                   <th scope="col" className="px-6 py-4 font-medium">รหัสบิล (Bill ID)</th>
                   <th scope="col" className="px-6 py-4 font-medium">ลูกค้า (Customer)</th>
                   <th scope="col" className="px-6 py-4 font-medium">รายการ (Items)</th>
@@ -544,8 +584,8 @@ export default function BeverageDashboard() {
                 ) : displayData.length > 0 ? (
                   displayData.map((order, index) => (
                     <tr key={order.billId || index} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-slate-500">
-                        {order.datetime?.split(' ')[1] || '-'}
+                      <td className="px-6 py-4 whitespace-nowrap text-slate-500 text-xs">
+                        {order.datetime || '-'}
                       </td>
                       <td className="px-6 py-4 font-mono text-xs text-slate-500">
                         {order.billId}
@@ -558,7 +598,7 @@ export default function BeverageDashboard() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="space-y-1">
-                          {(order.items || '').split('\n').map((item, i) => (
+                          {String(order.items || order['รายการสินค้า'] || '-').split(/\n/).map((item, i) => (
                             <div key={i} className="text-slate-600 bg-slate-50 px-2 py-1 rounded text-xs border border-slate-100 w-max max-w-xs truncate" title={item}>
                               {item}
                             </div>
@@ -609,20 +649,26 @@ export default function BeverageDashboard() {
   );
 }
 
-function KpiCard({ title, value, icon, trend, trendUp }) {
+function KpiCard({ title, value, icon, trend, highlight }) {
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between group hover:border-indigo-100 transition-colors">
-      <div>
-        <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
-        <h3 className="text-2xl font-bold text-slate-800">{value}</h3>
+    <div className={`p-5 rounded-2xl shadow-sm border transition-all ${
+      highlight ? 'bg-gradient-to-br from-amber-50 to-orange-50/50 border-amber-200/80' : 'bg-white border-slate-100'
+    }`}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-slate-500">{title}</p>
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+          highlight ? 'bg-amber-100' : 'bg-slate-50'
+        }`}>
+          {icon}
+        </div>
+      </div>
+      <div className="mt-2">
+        <h3 className="text-xl font-bold text-slate-800">{value}</h3>
         {trend && (
-          <p className={`text-xs mt-2 flex items-center gap-1 ${trendUp ? 'text-emerald-500' : 'text-slate-400'}`}>
-            {trendUp ? '↑' : ''} {trend}
+          <p className="text-xs mt-1 text-slate-500 font-medium">
+            {trend}
           </p>
         )}
-      </div>
-      <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-110 transition-transform">
-        {icon}
       </div>
     </div>
   );
