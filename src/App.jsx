@@ -18,7 +18,7 @@ const formatDateForComparison = (datetimeString) => {
   try {
     let str = String(datetimeString).trim();
 
-    // 1. Strip ISO time part if present (e.g. "2026-08-02T12:20:11.000Z" -> "2026-08-02")
+    // 1. Strip ISO time part if present
     if (str.includes('T')) {
       str = str.split('T')[0];
     }
@@ -36,7 +36,6 @@ const formatDateForComparison = (datetimeString) => {
 
         if (isNaN(day) || isNaN(month) || isNaN(year)) return "";
 
-        // Convert BE year (> 2400) to CE year
         if (year > 2400) year -= 543;
 
         const formattedMonth = String(month).padStart(2, '0');
@@ -95,7 +94,7 @@ export default function BeverageDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
-  const DATA_URL = "https://script.google.com/macros/s/AKfycbw_WzhZ6sc1cP6vI6D1-kCSWbsjUTd5eSiU9VlnIl16CVB_K-i-qjySuOQ7YngKJoxr/exec";
+  const DATA_URL = "https://script.google.com/macros/s/AKfycbzcNRoFsQ2gkzcLQ21qQdYx1VR8S0m1xMj3hN2TJFkp2Dx2e7wrVc9MInQtssJEgeL0/exec";
 
   useEffect(() => {
     const fetchData = async () => {
@@ -180,33 +179,69 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // Calculate Today's date string in YYYY-MM-DD
-  const todayStr = useMemo(() => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  }, []);
-
-  // [MODIFIED] Calculate Today's metrics safely using enhanced date comparison
+  // [MODIFIED] Ultra fail-proof Today's metrics matching (Pattern matching + Parsed comparison)
   const todayMetrics = useMemo(() => {
+    const now = new Date();
+    const d = now.getDate();
+    const m = now.getMonth() + 1;
+    const yCE = now.getFullYear();
+    const yBE = yCE + 543;
+
+    const todayIso = `${yCE}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+    // Text patterns for today's date in Thai Sheets (e.g. "2/8/2569", "02/08/2569", "2/8/2026", "2026-08-02")
+    const patterns = [
+      `${d}/${m}/${yBE}`,
+      `${d}/${m}/${yCE}`,
+      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yBE}`,
+      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yCE}`,
+      todayIso
+    ];
+
     const todayOrders = data.filter(item => {
       const status = item.status || '';
       const isCanceled = status.includes('ยกเลิก') || status.toLowerCase().includes('cancel');
       if (hideCanceled && isCanceled) return false;
-      return formatDateForComparison(item.datetime) === todayStr;
+
+      const dt = String(item.datetime || '').trim();
+      if (!dt) return false;
+
+      // Strategy 1: Direct text inclusion check (100% immune to time/timezone bugs)
+      if (patterns.some(p => dt.includes(p))) return true;
+
+      // Strategy 2: Formatted date comparison
+      return formatDateForComparison(dt) === todayIso;
     });
 
     const todaySales = todayOrders.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
     return { todaySales, todayCount: todayOrders.length };
-  }, [data, todayStr, hideCanceled]);
+  }, [data, hideCanceled]);
 
+  // [MODIFIED] Fail-proof display filter for selected date
   const displayData = useMemo(() => {
     let filtered = data;
 
     if (filterMode === 'day' && selectedDate) {
-      filtered = filtered.filter(item => formatDateForComparison(item.datetime) === selectedDate);
+      const [sY, sM, sD] = selectedDate.split('-');
+      const sY_BE = parseInt(sY, 10) + 543;
+      const dNum = parseInt(sD, 10);
+      const mNum = parseInt(sM, 10);
+
+      filtered = filtered.filter(item => {
+        const dt = String(item.datetime || '').trim();
+        if (!dt) return false;
+
+        const parsed = formatDateForComparison(dt);
+        if (parsed === selectedDate) return true;
+
+        const patterns = [
+          `${dNum}/${mNum}/${sY_BE}`,
+          `${sD}/${sM}/${sY_BE}`,
+          `${dNum}/${mNum}/${sY}`,
+          `${sD}/${sM}/${sY}`
+        ];
+        return patterns.some(p => dt.includes(p));
+      });
     } else if (filterMode === 'month' && selectedMonth) {
       filtered = filtered.filter(item => formatDateForComparison(item.datetime).startsWith(selectedMonth));
     } else if (filterMode === 'year' && selectedYear) {
