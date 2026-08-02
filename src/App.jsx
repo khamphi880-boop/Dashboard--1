@@ -12,21 +12,37 @@ const PAYMENT_COLORS = {
   "เงินสด": "#f59e0b"
 };
 
-// [MODIFIED] Ultra-robust date parser that strips time completely (both space and ISO 'T' formats)
+// [MODIFIED] Normalize backend field names to match frontend UI expectations
+const normalizeOrder = (raw) => {
+  if (!raw || typeof raw !== 'object') return raw;
+  
+  return {
+    ...raw,
+    datetime: raw.datetime || raw.timestampStr || raw['วัน-เวลา'] || raw['เวลา'] || '',
+    billId: raw.billId || raw.orderId || raw['รหัสบิล'] || '',
+    customer: raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || '',
+    items: raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '',
+    total: parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0,
+    payment: raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || '',
+    status: raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '',
+    deliveryPoint: raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '',
+    address: raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '',
+    remark: raw.remark || raw.note || raw['หมายเหตุ'] || ''
+  };
+};
+
+// Universal date parser that strips time completely
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
-    // 1. Strip ISO time part if present
     if (str.includes('T')) {
       str = str.split('T')[0];
     }
 
-    // 2. Strip space time part if present (e.g. "2/8/2569 12:20:11" -> "2/8/2569")
     const dateOnly = str.split(' ')[0].trim();
 
-    // 3. Handle Slash format (e.g. "2/8/2569" or "02/08/2569")
     if (dateOnly.includes('/')) {
       const parts = dateOnly.split('/');
       if (parts.length >= 3) {
@@ -44,7 +60,6 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
-    // 4. Handle Dash format (e.g. "2026-08-02" or "2569-08-02")
     if (dateOnly.includes('-')) {
       const parts = dateOnly.split('-');
       if (parts.length >= 3) {
@@ -64,7 +79,6 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
-    // 5. Fallback JS Date parsing
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
       let y = d.getFullYear();
@@ -79,27 +93,6 @@ const formatDateForComparison = (datetimeString) => {
     return "";
   }
 };
-
-// [ADDED] Normalize one order object coming from the GAS backend (or from a
-// header-based sheet dump) into the field names the rest of this component uses.
-// This is the actual fix: doGet() in the Apps Script returns objects shaped like
-// { timestampStr, orderId, lineName, itemsSummary, total, paymentMethod, status,
-//   deliveryLocation, address, note } — NOT { datetime, billId, customer, items,
-//   payment, deliveryPoint, remark } which is what the UI reads everywhere else.
-// Without this mapping, item.datetime is always undefined, so every date filter
-// (including "today's sales") silently matches nothing.
-const normalizeOrder = (row) => ({
-  datetime: row.datetime ?? row.timestampStr ?? row['วัน-เวลา'] ?? '',
-  billId: row.billId ?? row.orderId ?? row['รหัสบิล'] ?? '',
-  customer: row.customer ?? row.lineName ?? row['ชื่อลูกค้า'] ?? '',
-  items: row.items ?? row.itemsSummary ?? row['รายการสินค้า'] ?? '',
-  total: parseFloat(row.total) || 0,
-  payment: row.payment ?? row.paymentMethod ?? row['ช่องทางชำระ'] ?? '',
-  status: row.status ?? row['สถานะออร์เดอร์'] ?? '',
-  deliveryPoint: row.deliveryPoint ?? row.deliveryLocation ?? row['จุดจัดส่ง'] ?? '',
-  address: row.address ?? row['ที่อยู่จัดส่ง'] ?? '',
-  remark: row.remark ?? row.note ?? row['หมายเหตุ'] ?? ''
-});
 
 export default function BeverageDashboard() {
   const [data, setData] = useState([]);
@@ -157,17 +150,14 @@ export default function BeverageDashboard() {
                    else if (cleanHeader.includes('หมายเหตุ')) obj.remark = row[index];
                    else obj[cleanHeader] = row[index];
                 });
-                return obj;
+                return normalizeOrder(obj);
              });
              setData(mappedData);
              setIsLive(true); 
           } else {
-            // [FIXED] Previously: setData(parsedData) — kept the backend's raw field
-            // names (timestampStr, orderId, lineName, ...) which don't match what
-            // the rest of the component reads (datetime, billId, customer, ...).
-            // Now we normalize every row first.
-            const mappedData = parsedData.map(normalizeOrder);
-            setData(mappedData);
+            // [MODIFIED] Normalize raw objects array from Apps Script API
+            const normalizedData = parsedData.map(normalizeOrder);
+            setData(normalizedData);
             setIsLive(true); 
           }
         } else {
@@ -205,7 +195,16 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // [MODIFIED] Ultra fail-proof Today's metrics matching (Pattern matching + Parsed comparison)
+  // Today's date string in YYYY-MM-DD
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+
+  // Today's metrics matching
   const todayMetrics = useMemo(() => {
     const now = new Date();
     const d = now.getDate();
@@ -215,7 +214,6 @@ export default function BeverageDashboard() {
 
     const todayIso = `${yCE}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-    // Text patterns for today's date in Thai Sheets (e.g. "2/8/2569", "02/08/2569", "2/8/2026", "2026-08-02")
     const patterns = [
       `${d}/${m}/${yBE}`,
       `${d}/${m}/${yCE}`,
@@ -232,10 +230,8 @@ export default function BeverageDashboard() {
       const dt = String(item.datetime || '').trim();
       if (!dt) return false;
 
-      // Strategy 1: Direct text inclusion check (100% immune to time/timezone bugs)
       if (patterns.some(p => dt.includes(p))) return true;
 
-      // Strategy 2: Formatted date comparison
       return formatDateForComparison(dt) === todayIso;
     });
 
@@ -243,7 +239,6 @@ export default function BeverageDashboard() {
     return { todaySales, todayCount: todayOrders.length };
   }, [data, hideCanceled]);
 
-  // [MODIFIED] Fail-proof display filter for selected date
   const displayData = useMemo(() => {
     let filtered = data;
 
