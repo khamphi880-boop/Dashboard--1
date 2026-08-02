@@ -12,26 +12,46 @@ const PAYMENT_COLORS = {
   "เงินสด": "#f59e0b" // Amber 500
 };
 
-// [MODIFIED] Enhanced date helper to support BE (พ.ศ.), CE (ค.ศ.), slash and dash formats safely
+// [MODIFIED] Universal date parser that strictly supports ISO strings (e.g. 2026-08-02T...), BE (พ.ศ.), and CE (ค.ศ.)
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
-    const trimmed = String(datetimeString).trim();
-    const datePart = trimmed.split(' ')[0]; // "1/8/2569" or "2026-08-01"
+    const str = String(datetimeString).trim();
 
+    // 1. Handle ISO string format (e.g., "2026-08-02T05:20:11.000Z")
+    if (str.includes('T')) {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        let yyyy = d.getFullYear();
+        if (yyyy > 2400) yyyy -= 543;
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    }
+
+    // 2. Extract date part before space if present
+    const datePart = str.split(' ')[0];
+
+    // 3. Handle dash format (YYYY-MM-DD or DD-MM-YYYY)
     if (datePart.includes('-')) {
       const parts = datePart.split('-');
       if (parts[0].length === 4) {
         let y = parseInt(parts[0], 10);
         if (y > 2400) y -= 543;
-        return `${y}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        const m = parts[1].padStart(2, '0');
+        const d = parts[2].substring(0, 2).padStart(2, '0');
+        return `${y}-${m}-${d}`;
       } else {
         let y = parseInt(parts[2], 10);
         if (y > 2400) y -= 543;
-        return `${y}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        const m = parts[1].padStart(2, '0');
+        const d = parts[0].padStart(2, '0');
+        return `${y}-${m}-${d}`;
       }
     }
 
+    // 4. Handle slash format (D/M/YYYY or DD/MM/YYYY)
     if (datePart.includes('/')) {
       const [day, month, yearRaw] = datePart.split('/');
       let year = parseInt(yearRaw, 10);
@@ -41,9 +61,19 @@ const formatDateForComparison = (datetimeString) => {
         year -= 543;
       }
       
-      const paddedMonth = month.padStart(2, '0');
-      const paddedDay = day.padStart(2, '0');
+      const paddedMonth = String(month).padStart(2, '0');
+      const paddedDay = String(day).padStart(2, '0');
       return `${year}-${paddedMonth}-${paddedDay}`;
+    }
+
+    // Fallback parsing via JS Date
+    const parsedDate = new Date(str);
+    if (!isNaN(parsedDate.getTime())) {
+      let yyyy = parsedDate.getFullYear();
+      if (yyyy > 2400) yyyy -= 543;
+      const mm = String(parsedDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(parsedDate.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
     }
 
     return "";
@@ -66,7 +96,6 @@ export default function BeverageDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
-  // [MODIFIED] Live Google Apps Script API Endpoint
   const DATA_URL = "https://script.google.com/macros/s/AKfycbzcNRoFsQ2gkzcLQ21qQdYx1VR8S0m1xMj3hN2TJFkp2Dx2e7wrVc9MInQtssJEgeL0/exec";
 
   useEffect(() => {
@@ -97,7 +126,6 @@ export default function BeverageDashboard() {
                 const obj = {};
                 headers.forEach((header, index) => {
                    const cleanHeader = String(header || '').trim();
-                   // [MODIFIED] Flexible header matching to prevent missing data fields
                    if (cleanHeader.includes('วัน-เวลา') || cleanHeader.includes('เวลา')) obj.datetime = row[index];
                    else if (cleanHeader.includes('รหัสบิล') || cleanHeader.includes('บิล')) obj.billId = row[index];
                    else if (cleanHeader.includes('ชื่อลูกค้า') || cleanHeader.includes('ลูกค้า')) obj.customer = row[index];
@@ -153,7 +181,7 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // [MODIFIED] Calculate Today's date string (YYYY-MM-DD)
+  // Calculate Today's date string in YYYY-MM-DD
   const todayStr = useMemo(() => {
     const now = new Date();
     const yyyy = now.getFullYear();
@@ -162,7 +190,7 @@ export default function BeverageDashboard() {
     return `${yyyy}-${mm}-${dd}`;
   }, []);
 
-  // [MODIFIED] Dedicated Today's Sales and Today's Orders metrics calculation
+  // [MODIFIED] Calculate Today's metrics safely using enhanced date comparison
   const todayMetrics = useMemo(() => {
     const todayOrders = data.filter(item => {
       const status = item.status || '';
@@ -205,7 +233,6 @@ export default function BeverageDashboard() {
     return filtered;
   }, [data, searchTerm, selectedDate, selectedMonth, selectedYear, hideCanceled, filterMode]);
 
-  // [MODIFIED] Robust item counting and metrics calculation
   const metrics = useMemo(() => {
     const totalSales = displayData.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
     const totalOrders = displayData.length;
@@ -232,7 +259,7 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
-  // [MODIFIED] Smart Charts Data with automatic Daily fallback when no specific day is filtered
+  // [MODIFIED] Enhanced charts logic to parse time from ISO strings for hourly trend
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach(item => {
@@ -253,21 +280,28 @@ export default function BeverageDashboard() {
         let displayKey = '';
 
         if (isHourlyMode) {
-          // Hourly grouping for specific selected date
-          const timePart = item.datetime.split(' ')[1];
-          if (timePart) {
-            sortKey = timePart.split(':')[0];
+          let timeStr = '';
+          const rawDt = String(item.datetime);
+          if (rawDt.includes('T')) {
+            const d = new Date(rawDt);
+            if (!isNaN(d.getTime())) {
+              timeStr = String(d.getHours()).padStart(2, '0');
+            }
+          } else if (rawDt.includes(' ')) {
+            timeStr = rawDt.split(' ')[1].split(':')[0];
+          }
+
+          if (timeStr) {
+            sortKey = timeStr.padStart(2, '0');
             displayKey = sortKey + ":00";
           }
         } else if (filterMode === 'year' && selectedYear) {
-          // Monthly grouping for specific year
           sortKey = dateFormatted.substring(0, 7);
           const [yyyy, mm] = dateFormatted.split('-');
           const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
           const yearBE = parseInt(yyyy, 10) + 543;
           displayKey = `${monthNames[parseInt(mm, 10)]} ${yearBE.toString().slice(-2)}`;
         } else {
-          // Default: Daily grouping for All-time or Month filter
           sortKey = dateFormatted;
           const [yyyy, mm, dd] = dateFormatted.split('-');
           const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -411,7 +445,6 @@ export default function BeverageDashboard() {
           </div>
         </header>
 
-        {/* Notification Banner when filtered date has 0 records */}
         {data.length > 0 && displayData.length === 0 && filterMode === 'day' && selectedDate && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm shadow-sm">
             <div className="flex items-center gap-2">
@@ -434,10 +467,9 @@ export default function BeverageDashboard() {
           </div>
         )}
 
-        {/* [MODIFIED] KPI Cards Grid with Today's Sales highlighted */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           
-          {/* Card 1: Today's Sales */}
+          {/* Today's Sales */}
           <KpiCard 
             title="ยอดขายวันนี้ (Today)" 
             value={`฿${todayMetrics.todaySales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
@@ -446,7 +478,7 @@ export default function BeverageDashboard() {
             highlight={true}
           />
 
-          {/* Card 2: Total Sales */}
+          {/* Total Sales */}
           <KpiCard 
             title="ยอดขายรวม (Total)" 
             value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
@@ -454,21 +486,21 @@ export default function BeverageDashboard() {
             trend={selectedDate ? `วันที่ ${selectedDate}` : "ยอดรวมทั้งหมด"}
           />
 
-          {/* Card 3: Total Orders */}
+          {/* Total Orders */}
           <KpiCard 
             title="ออเดอร์ทั้งหมด (Orders)" 
             value={metrics.totalOrders} 
             icon={<ShoppingCart size={24} className="text-blue-500" />}
           />
 
-          {/* Card 4: Total Items */}
+          {/* Total Items */}
           <KpiCard 
             title="จำนวนสินค้า (Items)" 
             value={metrics.totalItems} 
             icon={<Package size={24} className="text-purple-500" />}
           />
 
-          {/* Card 5: Avg Order */}
+          {/* Avg Order */}
           <KpiCard 
             title="ยอดเฉลี่ย/บิล (Avg.)" 
             value={`฿${metrics.avgOrderValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
@@ -477,8 +509,6 @@ export default function BeverageDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Sales Trend Chart */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
             <h2 className="text-lg font-semibold mb-4 text-slate-800">{chartTitle}</h2>
             <div className="h-[300px] w-full">
@@ -503,7 +533,6 @@ export default function BeverageDashboard() {
             </div>
           </div>
 
-          {/* Payment Methods Chart */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
             <h2 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2">
               <CreditCard size={18} className="text-slate-400" /> ช่องทางชำระเงิน
