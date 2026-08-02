@@ -12,7 +12,7 @@ const PAYMENT_COLORS = {
   "เงินสด": "#f59e0b"
 };
 
-// [MODIFIED] Normalize backend field names to match frontend UI expectations
+// Normalize backend field names to match frontend UI expectations
 const normalizeOrder = (raw) => {
   if (!raw || typeof raw !== 'object') return raw;
   
@@ -100,10 +100,12 @@ export default function BeverageDashboard() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  const [filterMode, setFilterMode] = useState('day'); 
+  // [MODIFIED] Set default filterMode to 'year' and selectedYear to '2023' to gate dashboard for 2023
+  const [filterMode, setFilterMode] = useState('year'); 
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
-  const [selectedYear, setSelectedYear] = useState('');
+  // [MODIFIED] Gated default selected year to 2023
+  const [selectedYear, setSelectedYear] = useState('2023'); 
   
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
@@ -155,7 +157,6 @@ export default function BeverageDashboard() {
              setData(mappedData);
              setIsLive(true); 
           } else {
-            // [MODIFIED] Normalize raw objects array from Apps Script API
             const normalizedData = parsedData.map(normalizeOrder);
             setData(normalizedData);
             setIsLive(true); 
@@ -183,8 +184,12 @@ export default function BeverageDashboard() {
     const years = new Set(
       data.map(item => formatDateForComparison(item.datetime).split('-')[0]).filter(Boolean)
     );
+    // Ensure 2023 is always present in dropdown if set as selected
+    if (selectedYear) {
+      years.add(selectedYear);
+    }
     return Array.from(years).sort().reverse();
-  }, [data]);
+  }, [data, selectedYear]);
 
   const latestAvailableDate = useMemo(() => {
     if (!data || data.length === 0) return '';
@@ -377,7 +382,7 @@ export default function BeverageDashboard() {
 
   let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
   if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${selectedDate}`;
-  if (filterMode === 'year' && selectedYear) chartTitle = "แนวโน้มยอดขายรายเดือน (Monthly Sales Trend)";
+  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (Monthly Sales Trend) ปี ${parseInt(selectedYear) + 543}`;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
@@ -387,10 +392,10 @@ export default function BeverageDashboard() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <span className="text-3xl">🥤</span> Beverage Shop Dashboard
+              <span className="text-3xl">🥤</span> Beverage Shop Dashboard (2023)
             </h1>
             <div className="flex items-center gap-3 mt-2">
-              <p className="text-slate-500 text-sm">Real-time overview of daily sales and orders</p>
+              <p className="text-slate-500 text-sm">Real-time overview of sales and orders for year 2023</p>
               
               {loading ? (
                 <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
@@ -537,7 +542,7 @@ export default function BeverageDashboard() {
             title="ยอดขายรวม (Total)" 
             value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
             icon={<DollarSign size={24} className="text-emerald-500" />}
-            trend={selectedDate ? `วันที่ ${selectedDate}` : "ยอดรวมทั้งหมด"}
+            trend={filterMode === 'year' && selectedYear ? `ปี ${parseInt(selectedYear) + 543}` : selectedDate ? `วันที่ ${selectedDate}` : "ยอดรวมทั้งหมด"}
           />
 
           {/* Total Orders */}
@@ -625,7 +630,7 @@ export default function BeverageDashboard() {
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <h2 className="text-lg font-semibold text-slate-800">รายการออเดอร์ล่าสุด (Recent Orders)</h2>
+            <h2 className="text-lg font-semibold text-slate-800">รายการออเดอร์ (Orders 2023)</h2>
             <div className="relative w-full sm:w-64">
               <input 
                 type="text" 
@@ -717,7 +722,7 @@ export default function BeverageDashboard() {
                           <p className="text-sm font-semibold">{error}</p>
                         </div>
                       ) : (
-                        "ไม่พบข้อมูล (No data found)"
+                        "ไม่พบข้อมูลในปี 2023 (No 2023 data found)"
                       )}
                     </td>
                   </tr>
