@@ -94,7 +94,7 @@ const formatDateForComparison = (datetimeString) => {
   }
 };
 
-// [MODIFIED] Helper function to convert any date/time string to Thai B.E. (พ.ศ.) format for UI display
+// Helper function to convert any date/time string to Thai B.E. (พ.ศ.) format for UI display
 const formatDateToBE = (datetimeString) => {
   if (!datetimeString) return '-';
   try {
@@ -258,40 +258,46 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // Today's metrics matching
+  // [MODIFIED] Enhanced today Metrics calculation with automatic fallback to latest available date
   const todayMetrics = useMemo(() => {
     const now = new Date();
-    const d = now.getDate();
-    const m = now.getMonth() + 1;
     const yCE = now.getFullYear();
-    const yBE = yCE + 543;
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const todayIso = `${yCE}-${m}-${d}`;
 
-    const todayIso = `${yCE}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const getOrdersForIsoDate = (isoDate) => {
+      return data.filter(item => {
+        const status = item.status || '';
+        const isCanceled = status.includes('ยกเลิก') || status.toLowerCase().includes('cancel');
+        if (hideCanceled && isCanceled) return false;
 
-    const patterns = [
-      `${d}/${m}/${yBE}`,
-      `${d}/${m}/${yCE}`,
-      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yBE}`,
-      `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${yCE}`,
-      todayIso
-    ];
+        const dt = String(item.datetime || '').trim();
+        if (!dt) return false;
 
-    const todayOrders = data.filter(item => {
-      const status = item.status || '';
-      const isCanceled = status.includes('ยกเลิก') || status.toLowerCase().includes('cancel');
-      if (hideCanceled && isCanceled) return false;
+        return formatDateForComparison(dt) === isoDate;
+      });
+    };
 
-      const dt = String(item.datetime || '').trim();
-      if (!dt) return false;
+    let targetIso = todayIso;
+    let isFallbackToLatest = false;
+    let todayOrders = getOrdersForIsoDate(todayIso);
 
-      if (patterns.some(p => dt.includes(p))) return true;
-
-      return formatDateForComparison(dt) === todayIso;
-    });
+    // If today has no orders (e.g. historical dataset like 2023), fallback to latest date in dataset
+    if (todayOrders.length === 0 && latestAvailableDate) {
+      targetIso = latestAvailableDate;
+      todayOrders = getOrdersForIsoDate(latestAvailableDate);
+      isFallbackToLatest = true;
+    }
 
     const todaySales = todayOrders.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
-    return { todaySales, todayCount: todayOrders.length };
-  }, [data, hideCanceled]);
+    return { 
+      todaySales, 
+      todayCount: todayOrders.length,
+      targetIso,
+      isFallbackToLatest
+    };
+  }, [data, hideCanceled, latestAvailableDate]);
 
   const displayData = useMemo(() => {
     let filtered = data;
@@ -429,7 +435,6 @@ export default function BeverageDashboard() {
     return { paymentData, trendData };
   }, [displayData, filterMode, selectedDate, selectedYear]);
 
-  // [MODIFIED] Chart title updated to use พ.ศ.
   let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
   if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
   if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (Monthly Sales Trend) ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
@@ -441,12 +446,10 @@ export default function BeverageDashboard() {
         {/* Header Section */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
-            {/* [MODIFIED] Title updated to B.E. year (พ.ศ. 2566) */}
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
               <span className="text-3xl">🥤</span> Beverage Shop Dashboard (พ.ศ. 2566)
             </h1>
             <div className="flex items-center gap-3 mt-2">
-              {/* [MODIFIED] Subtitle updated to B.E. year */}
               <p className="text-slate-500 text-sm">ภาพรวมยอดขายและรายการสั่งซื้อ Real-time ประจำปี พ.ศ. 2566</p>
               
               {loading ? (
@@ -514,7 +517,6 @@ export default function BeverageDashboard() {
                   />
                 )}
 
-                {/* [MODIFIED] Options display B.E. format exclusively (พ.ศ. 2566) */}
                 {filterMode === 'year' && (
                   <select 
                       value={selectedYear}
@@ -581,16 +583,16 @@ export default function BeverageDashboard() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           
-          {/* Today's Sales */}
+          {/* [MODIFIED] Today's / Latest Available Day Sales KPI Card */}
           <KpiCard 
-            title="ยอดขายวันนี้ (Today)" 
+            title={todayMetrics.isFallbackToLatest ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})` : "ยอดขายวันนี้ (Today)"} 
             value={`฿${todayMetrics.todaySales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
             icon={<Sun size={24} className="text-amber-500" />}
-            trend={`${todayMetrics.todayCount} ออเดอร์วันนี้`}
+            trend={`${todayMetrics.todayCount} ออเดอร์ ${todayMetrics.isFallbackToLatest ? '(วันล่าสุดที่มีข้อมูล)' : '(วันนี้)'}`}
             highlight={true}
           />
 
-          {/* Total Sales - [MODIFIED] Shows B.E. year label */}
+          {/* Total Sales */}
           <KpiCard 
             title="ยอดขายรวม (Total)" 
             value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
@@ -683,7 +685,6 @@ export default function BeverageDashboard() {
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-            {/* [MODIFIED] Section header updated to B.E. format */}
             <h2 className="text-lg font-semibold text-slate-800">
               รายการออเดอร์ (ประจำปี พ.ศ. {parseInt(selectedYear || '2023') + 543})
             </h2>
@@ -728,7 +729,6 @@ export default function BeverageDashboard() {
                 ) : displayData.length > 0 ? (
                   displayData.map((order, index) => (
                     <tr key={order.billId || index} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
-                      {/* [MODIFIED] Date-time column converted to Thai B.E. via formatDateToBE */}
                       <td className="px-6 py-4 whitespace-nowrap text-slate-500 text-xs">
                         {formatDateToBE(order.datetime)}
                       </td>
