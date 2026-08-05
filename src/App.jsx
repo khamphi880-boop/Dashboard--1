@@ -41,6 +41,126 @@ const PAYMENT_COLORS = {
   Unknown: '#64748B',
 };
 
+const monthNamesThai = [
+  '', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+];
+
+// 🧠 Bulletproof Universal Date & Time Parser
+const parseDateTime = (datetimeString) => {
+  if (!datetimeString) return null;
+  let str = String(datetimeString).trim();
+  if (!str) return null;
+
+  let year = 0, month = 0, day = 0, hour = 0, minute = 0;
+
+  // 1. ISO string with 'T' (e.g. 2026-08-05T10:30:00.000Z)
+  if (str.includes('T')) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      year = d.getFullYear();
+      month = d.getMonth() + 1;
+      day = d.getDate();
+      hour = d.getHours();
+      minute = d.getMinutes();
+      if (year > 2400) year -= 543;
+      return buildParsedResult(year, month, day, hour, minute);
+    }
+  }
+
+  // 2. Separate date and time parts
+  const parts = str.split(/\s+/);
+  const dateStr = parts[0];
+  const timeStr = parts[1] || '';
+
+  if (timeStr && timeStr.includes(':')) {
+    const tParts = timeStr.split(':');
+    hour = parseInt(tParts[0], 10) || 0;
+    minute = parseInt(tParts[1], 10) || 0;
+  }
+
+  if (dateStr.includes('-')) {
+    const dParts = dateStr.split('-');
+    if (dParts.length >= 3) {
+      if (dParts[0].length === 4) { // YYYY-MM-DD
+        year = parseInt(dParts[0], 10);
+        month = parseInt(dParts[1], 10);
+        day = parseInt(dParts[2], 10);
+      } else { // DD-MM-YYYY
+        day = parseInt(dParts[0], 10);
+        month = parseInt(dParts[1], 10);
+        year = parseInt(dParts[2], 10);
+      }
+    }
+  } else if (dateStr.includes('/')) {
+    const dParts = dateStr.split('/');
+    if (dParts.length >= 3) {
+      if (dParts[0].length === 4) { // YYYY/MM/DD
+        year = parseInt(dParts[0], 10);
+        month = parseInt(dParts[1], 10);
+        day = parseInt(dParts[2], 10);
+      } else { // DD/MM/YYYY or D/M/YYYY
+        day = parseInt(dParts[0], 10);
+        month = parseInt(dParts[1], 10);
+        year = parseInt(dParts[2], 10);
+      }
+    }
+  } else {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      year = d.getFullYear();
+      month = d.getMonth() + 1;
+      day = d.getDate();
+      hour = d.getHours();
+      minute = d.getMinutes();
+    }
+  }
+
+  if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
+    return null;
+  }
+
+  if (year > 2400) year -= 543;
+
+  return buildParsedResult(year, month, day, hour, minute);
+};
+
+const buildParsedResult = (year, month, day, hour, minute) => {
+  const yyyy = String(year);
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  const hh = String(hour).padStart(2, '0');
+  const min = String(minute).padStart(2, '0');
+
+  return {
+    isoDate: `${yyyy}-${mm}-${dd}`,                             // "2026-08-05" (Standard comparison)
+    isoMonth: `${yyyy}-${mm}`,                                  // "2026-08"
+    hourStr: `${hh}:00`,                                        // "10:00"
+    timeStr: `${hh}:${min}`,                                    // "10:30"
+    year,
+    month,
+    day,
+    hour,
+    yearBE: year + 543,
+    shortYearBE: String(year + 543).slice(-2),
+    displayShortBE: `${parseInt(dd, 10)} ${monthNamesThai[month]} ${String(year + 543).slice(-2)}`, // "5 ส.ค. 69"
+    displayDayMonth: `${parseInt(dd, 10)} ${monthNamesThai[month]}`,                                // "5 ส.ค."
+    displayMonthBE: `${monthNamesThai[month]} ${String(year + 543).slice(-2)}`                      // "ส.ค. 69"
+  };
+};
+
+const formatDateForComparison = (datetimeString) => {
+  const parsed = parseDateTime(datetimeString);
+  return parsed ? parsed.isoDate : '';
+};
+
+const formatDateToBE = (datetimeString) => {
+  const parsed = parseDateTime(datetimeString);
+  if (!parsed) return datetimeString || '-';
+  const timeFormatted = parsed.timeStr !== '00:00' ? ` ${parsed.timeStr}` : '';
+  return `${String(parsed.day).padStart(2, '0')}/${String(parsed.month).padStart(2, '0')}/${parsed.yearBE}${timeFormatted}`;
+};
+
 // Normalize backend field names to match frontend UI expectations
 const normalizeOrder = (raw) => {
   if (!raw || typeof raw !== 'object') return raw;
@@ -60,109 +180,6 @@ const normalizeOrder = (raw) => {
   };
 };
 
-// Helper Format Date (BE & CE compatible)
-const formatDateForComparison = (datetimeString) => {
-  if (!datetimeString) return '';
-  try {
-    const trimmed = String(datetimeString).trim();
-
-    if (trimmed.includes('T')) {
-      const d = new Date(trimmed);
-      if (!isNaN(d.getTime())) {
-        let y = d.getFullYear();
-        if (y > 2400) y -= 543;
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-      }
-    }
-
-    const datePart = trimmed.split(' ')[0];
-
-    if (datePart.includes('-')) {
-      const parts = datePart.split('-');
-      if (parts[0].length === 4) {
-        let y = parseInt(parts[0], 10);
-        if (y > 2400) y -= 543;
-        return `${y}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-      } else {
-        let y = parseInt(parts[2], 10);
-        if (y > 2400) y -= 543;
-        return `${y}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-    }
-
-    if (datePart.includes('/')) {
-      const [day, month, yearRaw] = datePart.split('/');
-      let year = parseInt(yearRaw, 10);
-      if (isNaN(year)) return '';
-      if (year > 2400) year -= 543;
-      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-    }
-
-    return '';
-  } catch (e) {
-    return '';
-  }
-};
-
-const formatDateToBE = (datetimeString) => {
-  if (!datetimeString) return '-';
-  try {
-    let str = String(datetimeString).trim();
-    let timePart = '';
-
-    if (str.includes(' ')) {
-      const parts = str.split(' ');
-      str = parts[0];
-      timePart = parts.slice(1).join(' ');
-    } else if (str.includes('T')) {
-      const parts = str.split('T');
-      str = parts[0];
-      timePart = parts[1].split('.')[0];
-    }
-
-    let year, month, day;
-
-    if (str.includes('/')) {
-      const parts = str.split('/');
-      if (parts.length >= 3) {
-        day = parseInt(parts[0], 10);
-        month = parseInt(parts[1], 10);
-        year = parseInt(parts[2], 10);
-      }
-    } else if (str.includes('-')) {
-      const parts = str.split('-');
-      if (parts.length >= 3) {
-        if (parts[0].length === 4) {
-          year = parseInt(parts[0], 10);
-          month = parseInt(parts[1], 10);
-          day = parseInt(parts[2], 10);
-        } else {
-          day = parseInt(parts[0], 10);
-          month = parseInt(parts[1], 10);
-          year = parseInt(parts[2], 10);
-        }
-      }
-    }
-
-    if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
-      return datetimeString;
-    }
-
-    if (year < 2400) year += 543;
-
-    const dd = String(day).padStart(2, '0');
-    const mm = String(month).padStart(2, '0');
-    const yyyy = String(year);
-
-    return timePart ? `${dd}/${mm}/${yyyy} ${timePart}` : `${dd}/${mm}/${yyyy}`;
-  } catch (e) {
-    return datetimeString;
-  }
-};
-
-// Generate consistent avatar color based on name
 const getAvatarColor = (name = '') => {
   const colors = [
     'from-indigo-500 to-purple-500',
@@ -409,6 +426,7 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
+  // 📈 100% Chronological & Accurate Chart Generator
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach((item) => {
@@ -421,97 +439,56 @@ export default function BeverageDashboard() {
     }));
 
     const trendMap = {};
-    const isHourlyMode = filterMode === 'day' && selectedDate;
 
     displayData.forEach((item) => {
-      if (item.datetime) {
-        const dateFormatted = formatDateForComparison(item.datetime);
-        if (!dateFormatted) return;
+      if (!item.datetime) return;
+      const parsed = parseDateTime(item.datetime);
+      if (!parsed) return;
 
-        let sortKey = '';
-        let displayKey = '';
+      let sortKey = '';
+      let displayKey = '';
 
-        if (isHourlyMode) {
-          let timeStr = '';
-          const rawDt = String(item.datetime);
-          if (rawDt.includes('T')) {
-            const d = new Date(rawDt);
-            if (!isNaN(d.getTime())) {
-              timeStr = String(d.getHours()).padStart(2, '0');
-            }
-          } else if (rawDt.includes(' ')) {
-            timeStr = rawDt.split(' ')[1].split(':')[0];
-          }
-
-          if (timeStr) {
-            sortKey = timeStr.padStart(2, '0');
-            displayKey = sortKey + ':00';
-          }
-        } else if (filterMode === 'year' && selectedYear) {
-          sortKey = dateFormatted.substring(0, 7);
-          const [yyyy, mm] = dateFormatted.split('-');
-          const monthNames = [
-            '',
-            'ม.ค.',
-            'ก.พ.',
-            'มี.ค.',
-            'เม.ย.',
-            'พ.ค.',
-            'มิ.ย.',
-            'ก.ค.',
-            'ส.ค.',
-            'ก.ย.',
-            'ต.ค.',
-            'พ.ย.',
-            'ธ.ค.',
-          ];
-          const yearBE = parseInt(yyyy, 10) + 543;
-          displayKey = `${monthNames[parseInt(mm, 10)]} ${yearBE.toString().slice(-2)}`;
-        } else {
-          sortKey = dateFormatted;
-          const [yyyy, mm, dd] = dateFormatted.split('-');
-          const monthNames = [
-            '',
-            'ม.ค.',
-            'ก.พ.',
-            'มี.ค.',
-            'เม.ย.',
-            'พ.ค.',
-            'มิ.ย.',
-            'ก.ค.',
-            'ส.ค.',
-            'ก.ย.',
-            'ต.ค.',
-            'พ.ย.',
-            'ธ.ค.',
-          ];
-          displayKey = `${parseInt(dd, 10)} ${monthNames[parseInt(mm, 10)]}`;
-        }
-
-        if (sortKey) {
-          if (!trendMap[sortKey]) {
-            trendMap[sortKey] = { time: displayKey, sales: 0 };
-          }
-          trendMap[sortKey].sales += parseFloat(item.total) || 0;
-        }
+      if (filterMode === 'day' && selectedDate) {
+        // 🕒 รายชั่วโมง (เรียงจาก 00:00 -> 23:00)
+        sortKey = String(parsed.hour).padStart(2, '0');
+        displayKey = parsed.hourStr;
+      } else if (filterMode === 'year' && selectedYear) {
+        // 🗓️ รายเดือน (เรียงจาก YYYY-01 -> YYYY-12)
+        sortKey = parsed.isoMonth;
+        displayKey = parsed.displayMonthBE;
+      } else if (filterMode === 'month' && selectedMonth) {
+        // 📅 รายวันในเดือน (เรียงจาก YYYY-MM-01 -> YYYY-MM-31)
+        sortKey = parsed.isoDate;
+        displayKey = parsed.displayDayMonth;
+      } else {
+        // 📆 รายวันทั่วไป (แสดงปีพ.ศ.กำกับ ป้องกันวันซ้ำข้ามปี)
+        sortKey = parsed.isoDate;
+        displayKey = parsed.displayShortBE;
       }
+
+      if (!trendMap[sortKey]) {
+        trendMap[sortKey] = { time: displayKey, sales: 0 };
+      }
+      trendMap[sortKey].sales += parseFloat(item.total) || 0;
     });
+
+    // ✨ จัดเรียงคีย์ ISO ลำดับเวลาจากอดีตไปปัจจุบัน 100%
     const trendData = Object.keys(trendMap)
       .sort()
       .map((key) => trendMap[key]);
 
     return { paymentData, trendData };
-  }, [displayData, filterMode, selectedDate, selectedYear]);
+  }, [displayData, filterMode, selectedDate, selectedMonth, selectedYear]);
 
   let chartTitle = 'แนวโน้มยอดขายรายวัน (Daily Sales Trend)';
   if (filterMode === 'day' && selectedDate)
-    chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
+    chartTitle = `แนวโน้มยอดขายรายชั่วโมง (วันที่ ${formatDateToBE(selectedDate)})`;
   if (filterMode === 'year' && selectedYear)
-    chartTitle = `แนวโน้มยอดขายรายเดือน ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
+    chartTitle = `แนวโน้มยอดขายรายเดือน (ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})`;
 
   return (
     <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white p-4 sm:p-6 lg:p-8">
-      {/* Dynamic Glow Overlay background */}
+      {/* Background Glow Overlay */}
       <div className="fixed top-0 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[128px] pointer-events-none" />
       <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-[128px] pointer-events-none" />
 
