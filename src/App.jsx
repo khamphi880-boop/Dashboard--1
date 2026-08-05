@@ -6,11 +6,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
-  Legend,
+  ResponsiveContainer,
 } from 'recharts';
 import {
   ShoppingCart,
@@ -24,21 +23,23 @@ import {
   Calendar,
   Search,
   Sparkles,
-  Zap,
-  ArrowUpRight,
-  Filter,
-  X,
   RefreshCw,
+  Zap,
+  Layers,
+  Activity,
+  Filter,
 } from 'lucide-react';
 
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
+const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
+
 const PAYMENT_COLORS = {
-  ไทยช่วยไทยพลัส: '#10b981', // Emerald 500
-  โอนพร้อมเพย์: '#3b82f6', // Blue 500
-  เงินสด: '#f59e0b', // Amber 500
+  ไทยช่วยไทยพลัส: '#10B981', // Emerald 500
+  โอนพร้อมเพย์: '#3B82F6',   // Blue 500
+  เงินสด: '#F59E0B',         // Amber 500
+  Unknown: '#64748B',
 };
 
-// Helper แปลงวันที่ BE (พ.ศ.), CE (ค.ศ.) รองรับ slash และ dash
+// Helper Format Date (BE & CE compatible)
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return '';
   try {
@@ -62,20 +63,30 @@ const formatDateForComparison = (datetimeString) => {
       const [day, month, yearRaw] = datePart.split('/');
       let year = parseInt(yearRaw, 10);
       if (isNaN(year)) return '';
-
-      if (year > 2400) {
-        year -= 543;
-      }
-
-      const paddedMonth = month.padStart(2, '0');
-      const paddedDay = day.padStart(2, '0');
-      return `${year}-${paddedMonth}-${paddedDay}`;
+      if (year > 2400) year -= 543;
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
 
     return '';
   } catch (e) {
     return '';
   }
+};
+
+// Generate consistent avatar color based on name
+const getAvatarColor = (name = '') => {
+  const colors = [
+    'from-indigo-500 to-purple-500',
+    'from-blue-500 to-cyan-500',
+    'from-emerald-500 to-teal-500',
+    'from-orange-500 to-amber-500',
+    'from-pink-500 to-rose-500',
+  ];
+  let charCode = 0;
+  for (let i = 0; i < name.length; i++) {
+    charCode += name.charCodeAt(i);
+  }
+  return colors[charCode % colors.length];
 };
 
 export default function BeverageDashboard() {
@@ -102,9 +113,7 @@ export default function BeverageDashboard() {
       const response = await fetch(DATA_URL);
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error(
-            '404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy ไปแล้ว'
-          );
+          throw new Error('404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy');
         }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -145,7 +154,6 @@ export default function BeverageDashboard() {
           setIsLive(true);
         }
       } else {
-        console.warn('API returned empty data.');
         setData([]);
         setIsLive(false);
         setError('ไม่พบข้อมูลจากระบบ (Empty Data)');
@@ -155,9 +163,8 @@ export default function BeverageDashboard() {
       setData([]);
       setIsLive(false);
       setError(err.message || 'ไม่สามารถดึงข้อมูลได้ (Connection Error)');
-    } finally {
-      setLoading(false);
-    }
+    } flex;
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -258,22 +265,12 @@ export default function BeverageDashboard() {
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach((item) => {
-      const pm = item.payment || 'Unknown';
+      const pm = item.payment || 'เงินสด';
       paymentMap[pm] = (paymentMap[pm] || 0) + 1;
     });
     const paymentData = Object.keys(paymentMap).map((key) => ({
       name: key,
       value: paymentMap[key],
-    }));
-
-    const deliveryMap = {};
-    displayData.forEach((item) => {
-      const dp = item.deliveryPoint || 'Unknown';
-      deliveryMap[dp] = (deliveryMap[dp] || 0) + 1;
-    });
-    const deliveryData = Object.keys(deliveryMap).map((key) => ({
-      name: key,
-      value: deliveryMap[key],
     }));
 
     const trendMap = {};
@@ -346,7 +343,7 @@ export default function BeverageDashboard() {
       .sort()
       .map((key) => trendMap[key]);
 
-    return { paymentData, deliveryData, trendData };
+    return { paymentData, trendData };
   }, [displayData, filterMode]);
 
   let chartTitle = 'แนวโน้มยอดขายรายชั่วโมง (Hourly Sales Trend)';
@@ -356,274 +353,227 @@ export default function BeverageDashboard() {
     chartTitle = 'แนวโน้มยอดขายรายเดือน (Monthly Sales Trend)';
 
   return (
-    <div className="min-h-screen bg-[#0b0f17] text-slate-100 font-sans antialiased relative selection:bg-indigo-500 selection:text-white pb-12">
-      {/* Ambient Radial Gradient Lights */}
-      <div className="fixed top-0 left-1/4 w-96 h-96 bg-indigo-600/15 rounded-full blur-[128px] pointer-events-none" />
-      <div className="fixed top-1/3 right-10 w-96 h-96 bg-emerald-500/10 rounded-full blur-[128px] pointer-events-none" />
+    <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white p-4 sm:p-6 lg:p-8">
+      {/* Dynamic Glow Overlay background */}
+      <div className="fixed top-0 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[128px] pointer-events-none" />
+      <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-[128px] pointer-events-none" />
 
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8 relative z-10">
+      <div className="max-w-7xl mx-auto space-y-8 relative z-10">
         
-        {/* Header Section */}
-        <header className="bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-2xl shadow-black/50">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-            
-            {/* Title & Live Status */}
-            <div className="space-y-1">
+        {/* HEADER SECTION */}
+        <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 p-0.5 shadow-lg shadow-indigo-500/20">
+              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                <Sparkles className="w-7 h-7 text-indigo-400" />
+              </div>
+            </div>
+            <div>
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-2xl shadow-lg shadow-indigo-500/30">
-                  <Sparkles className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-slate-400">
-                    Beverage Shop
-                  </h1>
-                  <p className="text-xs text-slate-400 font-medium tracking-wide uppercase mt-0.5">
-                    Enterprise Analytics Platform
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Global Controls Bar */}
-            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-              
-              {/* Live Status Indicator Pill */}
-              <div className="flex items-center gap-2 px-3.5 py-2 bg-slate-950/60 rounded-2xl border border-slate-800">
-                {loading ? (
-                  <span className="flex items-center gap-2 text-xs font-semibold text-indigo-400">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Syncing...
-                  </span>
-                ) : error ? (
-                  <span className="flex items-center gap-2 text-xs font-semibold text-rose-400">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" /> Connection Issue
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
-                    {isLive ? 'Live System' : 'Offline Mode'}
-                  </span>
-                )}
-              </div>
-
-              {/* Filter Mode Switcher */}
-              <div className="flex bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 text-xs font-semibold">
-                {['day', 'month', 'year'].map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setFilterMode(mode)}
-                    className={`px-4 py-2 rounded-xl transition-all duration-200 capitalize ${
-                      filterMode === mode
-                        ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                    }`}
-                  >
-                    {mode === 'day' ? 'วัน' : mode === 'month' ? 'เดือน' : 'ปี'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Date Input Field */}
-              <div className="relative min-w-[150px] flex-1 sm:flex-none">
-                <Calendar className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                {filterMode === 'day' && (
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl pl-10 pr-8 py-2.5 focus:outline-none focus:border-indigo-500 transition-colors"
-                  />
-                )}
-                {filterMode === 'month' && (
-                  <input
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl pl-10 pr-8 py-2.5 focus:outline-none focus:border-indigo-500 transition-colors"
-                  />
-                )}
-                {filterMode === 'year' && (
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl pl-10 pr-8 py-2.5 focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer appearance-none"
-                  >
-                    <option value="">ทุกปี (All Years)</option>
-                    {availableYears.map((year) => (
-                      <option key={year} value={year}>
-                        {parseInt(year) + 543} ({year})
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {((filterMode === 'day' && selectedDate) ||
-                  (filterMode === 'month' && selectedMonth) ||
-                  (filterMode === 'year' && selectedYear)) && (
-                  <button
-                    onClick={() => {
-                      setSelectedDate('');
-                      setSelectedMonth('');
-                      setSelectedYear('');
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Hide Canceled Toggle */}
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 bg-slate-950/80 px-3.5 py-2.5 rounded-2xl border border-slate-800 cursor-pointer hover:border-slate-700 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={hideCanceled}
-                  onChange={(e) => setHideCanceled(e.target.checked)}
-                  className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-900 w-3.5 h-3.5"
-                />
-                ซ่อนรายการยกเลิก
-              </label>
-
-              {/* Manual Refresh Button */}
-              <button
-                onClick={fetchData}
-                disabled={loading}
-                className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-2xl hover:bg-slate-800 text-slate-300 hover:text-white transition-all disabled:opacity-50"
-                title="รีเฟรชข้อมูล"
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Date Zero Match Notification Banner */}
-        {data.length > 0 &&
-          displayData.length === 0 &&
-          filterMode === 'day' &&
-          selectedDate && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 text-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs backdrop-blur-md">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
-                <span>
-                  ไม่พบรายการออเดอร์ในวันที่ <strong>{selectedDate}</strong>
-                  {latestAvailableDate && (
-                    <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong>{latestAvailableDate}</strong>)</>
-                  )}
+                <h1 className="text-2xl font-black tracking-tight text-white font-sans">
+                  DRINKHUB <span className="bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent">PRO</span>
+                </h1>
+                <span className="px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full">
+                  Enterprise
                 </span>
               </div>
-              {latestAvailableDate && (
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-slate-400 text-xs font-medium">
+                  Real-time beverage analytics & revenue engine
+                </p>
+                {loading ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20 animate-pulse">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Syncing...
+                  </span>
+                ) : error ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/20">
+                    <AlertCircle className="w-3 h-3" /> API Error
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> Live Engine
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* CONTROLS */}
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            {/* Segmented Period Tabs */}
+            <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 shadow-inner">
+              {['day', 'month', 'year'].map((mode) => (
                 <button
-                  onClick={() => setSelectedDate(latestAvailableDate)}
-                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3 py-1.5 rounded-xl transition-colors shrink-0 shadow-lg shadow-amber-500/20"
+                  key={mode}
+                  onClick={() => setFilterMode(mode)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 capitalize ${
+                    filterMode === mode
+                      ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-md shadow-indigo-500/25'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  เปิดดูวันที่ล่าสุด ({latestAvailableDate})
+                  {mode === 'day' ? 'รายวัน' : mode === 'month' ? 'รายเดือน' : 'รายปี'}
+                </button>
+              ))}
+            </div>
+
+            {/* Date Inputs */}
+            <div className="relative flex-1 sm:flex-none min-w-[150px]">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Calendar className="w-4 h-4" />
+              </div>
+              {filterMode === 'day' && (
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+                />
+              )}
+              {filterMode === 'month' && (
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+                />
+              )}
+              {filterMode === 'year' && (
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer font-mono"
+                >
+                  <option value="">ทั้งหมด (All Years)</option>
+                  {availableYears.map((year) => (
+                    <option key={year} value={year}>
+                      {parseInt(year) + 543} ({year})
+                    </option>
+                  ))}
+                </select>
+              )}
+              {((filterMode === 'day' && selectedDate) ||
+                (filterMode === 'month' && selectedMonth) ||
+                (filterMode === 'year' && selectedYear)) && (
+                <button
+                  onClick={() => {
+                    setSelectedDate('');
+                    setSelectedMonth('');
+                    setSelectedYear('');
+                  }}
+                  className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-500 hover:text-slate-300"
+                >
+                  ✕
                 </button>
               )}
             </div>
-          )}
 
-        {/* Top KPI Metric Cards Grid */}
+            {/* Toggle Canceled */}
+            <label className="flex items-center gap-2 cursor-pointer bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800/80 text-xs font-medium text-slate-300 hover:border-slate-700 transition-all">
+              <input
+                type="checkbox"
+                checked={hideCanceled}
+                onChange={(e) => setHideCanceled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-8 h-4 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+              <span>ซ่อนรายการยกเลิก</span>
+            </label>
+          </div>
+        </header>
+
+        {/* NOTIFICATION BANNER */}
+        {data.length > 0 && displayData.length === 0 && filterMode === 'day' && selectedDate && (
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 text-amber-300 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-lg backdrop-blur-md">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                ไม่พบบันทึกรายการสำหรับวันที่ <strong className="text-white font-mono">{selectedDate}</strong>
+                {latestAvailableDate && (
+                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong className="text-amber-200 font-mono">{latestAvailableDate}</strong>)</>
+                )}
+              </span>
+            </div>
+            {latestAvailableDate && (
+              <button
+                onClick={() => setSelectedDate(latestAvailableDate)}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-md"
+              >
+                สลับไปวันที่ล่าสุด
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* METRICS GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <KpiCard
-            title="ยอดขายรวม"
-            subtitle="Total Revenue"
-            value={`฿${metrics.totalSales.toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-            })}`}
-            icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
-            accentColor="emerald"
-            badgeText="ยอดขายสุทธิ"
+            title="ยอดขายรวม (Total Revenue)"
+            value={`฿${metrics.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+            icon={<DollarSign className="w-6 h-6 text-emerald-400" />}
+            glow="bg-emerald-500"
+            gradient="from-emerald-500/20 to-teal-500/10"
+            badge="Revenue"
           />
           <KpiCard
-            title="ออเดอร์ทั้งหมด"
-            subtitle="Total Orders"
+            title="ออเดอร์ทั้งหมด (Total Orders)"
             value={metrics.totalOrders.toLocaleString()}
-            icon={<ShoppingCart className="w-5 h-5 text-indigo-400" />}
-            accentColor="indigo"
-            badgeText="คำสั่งซื้อ"
+            icon={<ShoppingCart className="w-6 h-6 text-indigo-400" />}
+            glow="bg-indigo-500"
+            gradient="from-indigo-500/20 to-purple-500/10"
+            badge="Volume"
           />
           <KpiCard
-            title="จำนวนสินค้าขายได้"
-            subtitle="Total Items Sold"
+            title="แก้ว/สินค้าขายได้ (Total Items)"
             value={metrics.totalItems.toLocaleString()}
-            icon={<Package className="w-5 h-5 text-purple-400" />}
-            accentColor="purple"
-            badgeText="ชิ้น"
+            icon={<Package className="w-6 h-6 text-purple-400" />}
+            glow="bg-purple-500"
+            gradient="from-purple-500/20 to-pink-500/10"
+            badge="Units"
           />
           <KpiCard
-            title="ยอดเฉลี่ยต่อบิล"
-            subtitle="Avg. Order Value"
-            value={`฿${metrics.avgOrderValue.toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}`}
-            icon={<TrendingUp className="w-5 h-5 text-amber-400" />}
-            accentColor="amber"
-            badgeText="AOV"
+            title="ยอดเฉลี่ยต่อบิล (Avg. Ticket)"
+            value={`฿${metrics.avgOrderValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            icon={<TrendingUp className="w-6 h-6 text-amber-400" />}
+            glow="bg-amber-500"
+            gradient="from-amber-500/20 to-orange-500/10"
+            badge="Efficiency"
           />
         </div>
 
-        {/* Charts Grid */}
+        {/* CHARTS SECTION */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Main Area Sales Trend Chart */}
-          <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 p-6 rounded-3xl shadow-xl lg:col-span-2 flex flex-col justify-between">
+          {/* Main Area Chart */}
+          <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl lg:col-span-2">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-indigo-400" />
+                  <Activity className="w-4 h-4 text-indigo-400" />
                   {chartTitle}
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  การเติบโตและแนวโน้มรายรับตามช่วงเวลา
-                </p>
+                <p className="text-xs text-slate-400 mt-0.5">ภาพรวมแนวโน้มรายได้ตามช่วงเวลา</p>
               </div>
-              <span className="text-xs font-semibold px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl">
-                Realtime Trend
-              </span>
             </div>
-
-            <div className="h-[320px] w-full">
+            
+            <div className="h-[300px] w-full">
               {chartsData.trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartsData.trendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <AreaChart data={chartsData.trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                        <stop offset="5%" stopColor="#6366F1" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#6366F1" stopOpacity={0.0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
-                    <XAxis
-                      dataKey="time"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#94a3b8', fontSize: 11 }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#94a3b8', fontSize: 11 }}
-                      tickFormatter={(value) => `฿${value}`}
-                    />
-                    <RechartsTooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          return (
-                            <div className="bg-slate-950/90 border border-slate-800 p-3 rounded-2xl shadow-2xl backdrop-blur-md">
-                              <p className="text-xs text-slate-400 font-medium">{payload[0].payload.time}</p>
-                              <p className="text-sm font-bold text-indigo-400 mt-1">
-                                ฿{payload[0].value?.toLocaleString()}
-                              </p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1E293B" />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={(val) => `฿${val}`} />
+                    <RechartsTooltip content={<CustomTooltip />} />
                     <Area
                       type="monotone"
                       dataKey="sales"
-                      stroke="#818cf8"
+                      stroke="#6366F1"
                       strokeWidth={3}
                       fillOpacity={1}
                       fill="url(#salesGradient)"
@@ -631,24 +581,25 @@ export default function BeverageDashboard() {
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-2">
-                  <Filter className="w-8 h-8 opacity-40" />
-                  <p className="text-xs">ไม่มีข้อมูลแนวโน้มยอดขายในช่วงนี้</p>
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs">
+                  <Layers className="w-8 h-8 mb-2 opacity-40" />
+                  ไม่มีข้อมูลสำหรับแสดงผลกราฟในเลือกช่วงเวลานี้
                 </div>
               )}
             </div>
           </div>
 
-          {/* Payment Method Pie Chart */}
-          <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 p-6 rounded-3xl shadow-xl flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
+          {/* Donut Payment Chart */}
+          <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl flex flex-col justify-between">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2 mb-1">
                 <CreditCard className="w-4 h-4 text-emerald-400" />
-                สัดส่วนการชำระเงิน
+                ช่องทางชำระเงิน (Payments)
               </h2>
+              <p className="text-xs text-slate-400">สัดส่วนการชำระเงินของลูกค้า</p>
             </div>
 
-            <div className="h-[260px] w-full">
+            <div className="h-[220px] w-full my-4 relative flex items-center justify-center">
               {chartsData.paymentData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -657,106 +608,87 @@ export default function BeverageDashboard() {
                       cx="50%"
                       cy="50%"
                       innerRadius={65}
-                      outerRadius={90}
+                      outerRadius={85}
                       paddingAngle={6}
                       dataKey="value"
                     >
                       {chartsData.paymentData.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
-                          fill={
-                            PAYMENT_COLORS[entry.name] ||
-                            COLORS[index % COLORS.length]
-                          }
-                          stroke="#0f172a"
-                          strokeWidth={2}
+                          fill={PAYMENT_COLORS[entry.name] || COLORS[index % COLORS.length]}
+                          stroke="transparent"
                         />
                       ))}
                     </Pie>
-                    <RechartsTooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          return (
-                            <div className="bg-slate-950/90 border border-slate-800 p-2.5 rounded-xl shadow-xl backdrop-blur-md">
-                              <p className="text-xs font-semibold text-white">{payload[0].name}</p>
-                              <p className="text-xs text-indigo-400 font-bold mt-0.5">
-                                {payload[0].value} รายการ
-                              </p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Legend
-                      verticalAlign="bottom"
-                      height={36}
-                      iconType="circle"
-                      formatter={(value) => (
-                        <span className="text-xs text-slate-300 font-medium px-1">
-                          {value}
-                        </span>
-                      )}
-                    />
+                    <RechartsTooltip content={<CustomPieTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
-                  ไม่มีข้อมูลชำระเงิน
-                </div>
+                <div className="text-slate-500 text-xs">ไม่มีข้อมูล</div>
               )}
+            </div>
+
+            {/* Custom Payment Legend */}
+            <div className="space-y-2">
+              {chartsData.paymentData.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-800/50">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: PAYMENT_COLORS[item.name] || COLORS[idx % COLORS.length] }}
+                    />
+                    <span className="text-slate-300 font-medium">{item.name}</span>
+                  </div>
+                  <span className="font-mono font-bold text-white">{item.value} บิล</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Data Table Container */}
-        <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 rounded-3xl overflow-hidden shadow-2xl">
+        {/* ORDERS TABLE SECTION */}
+        <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden">
           
-          {/* Table Toolbar Header */}
           <div className="p-6 border-b border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                รายการออเดอร์ล่าสุด
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                รายการออเดอร์ล่าสุด (Live Transactions)
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                พบทั้งหมด {displayData.length} รายการ
-              </p>
+              <p className="text-xs text-slate-400 mt-0.5">แสดง {displayData.length} รายการที่ตรงตามเงื่อนไข</p>
             </div>
 
-            {/* Search Input Box */}
             <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type="text"
                 placeholder="ค้นหาชื่อลูกค้า, รหัสบิล, ที่อยู่..."
-                className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl pl-10 pr-4 py-2.5 focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-500"
+                className="w-full bg-slate-950/90 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                disabled={data.length === 0}
               />
             </div>
           </div>
 
-          {/* Table Display */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800/80">
-                <tr>
-                  <th scope="col" className="px-6 py-4">เวลา</th>
-                  <th scope="col" className="px-6 py-4">รหัสบิล</th>
-                  <th scope="col" className="px-6 py-4">ลูกค้า & ที่อยู่</th>
-                  <th scope="col" className="px-6 py-4">รายการสินค้า</th>
-                  <th scope="col" className="px-6 py-4 text-right">ยอดรวม</th>
-                  <th scope="col" className="px-6 py-4 text-center">สถานะ</th>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800/80 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  <th scope="col" className="px-6 py-4">เวลา (Time)</th>
+                  <th scope="col" className="px-6 py-4">รหัสบิล (Bill ID)</th>
+                  <th scope="col" className="px-6 py-4">ลูกค้า (Customer)</th>
+                  <th scope="col" className="px-6 py-4">รายการสินค้า (Items)</th>
+                  <th scope="col" className="px-6 py-4 text-right">ยอดรวม (Total)</th>
+                  <th scope="col" className="px-6 py-4 text-center">สถานะ (Status)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50 text-slate-300">
+              <tbody className="divide-y divide-slate-800/50 text-xs">
                 {loading && data.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-16 text-center text-slate-400">
-                      <div className="flex flex-col items-center gap-3">
-                        <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
-                        <p className="font-medium text-slate-300">กำลังเชื่อมต่อข้อมูลจาก Google Sheets...</p>
+                    <td colSpan="6" className="px-6 py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center gap-2">
+                        <RefreshCw className="w-6 h-6 animate-spin text-indigo-400" />
+                        <span>กำลังเชื่อมต่อฐานข้อมูล...</span>
                       </div>
                     </td>
                   </tr>
@@ -769,53 +701,56 @@ export default function BeverageDashboard() {
                     return (
                       <tr
                         key={order.billId || index}
-                        className="hover:bg-slate-800/40 transition-colors duration-150"
+                        className="hover:bg-slate-800/30 transition-colors group"
                       >
-                        <td className="px-6 py-4 font-mono text-slate-400 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-slate-400">
                           {order.datetime?.split(' ')[1] || '-'}
                         </td>
-                        <td className="px-6 py-4 font-mono font-bold text-indigo-400 whitespace-nowrap">
+                        <td className="px-6 py-4 font-mono font-medium text-indigo-400">
                           #{order.billId}
                         </td>
                         <td className="px-6 py-4">
-                          <div className="font-semibold text-slate-200">
-                            {order.customer}
-                          </div>
-                          {order.address && (
-                            <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate max-w-xs">
-                              <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
-                              {order.address}
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full bg-gradient-to-tr ${getAvatarColor(order.customer)} flex items-center justify-center font-bold text-white shadow-md`}>
+                              {order.customer ? order.customer.charAt(0).toUpperCase() : '?'}
                             </div>
-                          )}
+                            <div>
+                              <p className="font-semibold text-slate-200">{order.customer || 'ลูกค้าทั่วไป'}</p>
+                              <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3 text-slate-600" /> {order.address || 'รับที่ร้าน'}
+                              </p>
+                            </div>
+                          </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-wrap gap-1 max-w-sm">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
                             {(order.items || '').split('\n').map((item, i) => (
                               <span
                                 key={i}
-                                className="bg-slate-950/80 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-lg text-[11px]"
+                                className="bg-slate-950/80 border border-slate-800 text-slate-300 text-[11px] px-2 py-0.5 rounded-md truncate max-w-[200px]"
+                                title={item}
                               >
                                 {item}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-right font-mono font-extrabold text-white text-sm whitespace-nowrap">
-                          ฿{order.total?.toLocaleString()}
+                        <td className="px-6 py-4 text-right font-mono font-bold text-white text-sm">
+                          ฿{parseFloat(order.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-6 py-4 text-center whitespace-nowrap">
+                        <td className="px-6 py-4 text-center">
                           <span
-                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border ${
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border shadow-sm ${
                               isCanceled
-                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-rose-500/10'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-emerald-500/10'
                             }`}
                           >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                isCanceled ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'
-                              }`}
-                            />
+                            {isCanceled ? (
+                              <AlertCircle className="w-3 h-3" />
+                            ) : (
+                              <CheckCircle2 className="w-3 h-3" />
+                            )}
                             {(order.status || '').replace(/[🔴🟢]/g, '').trim() || 'สำเร็จ'}
                           </span>
                         </td>
@@ -824,19 +759,8 @@ export default function BeverageDashboard() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-6 py-16 text-center text-slate-400">
-                      {error ? (
-                        <div className="flex flex-col items-center gap-3 text-rose-400 max-w-md mx-auto">
-                          <AlertCircle className="w-10 h-10" />
-                          <p className="font-bold text-base">เกิดข้อผิดพลาดในการดึงข้อมูล</p>
-                          <p className="text-xs text-slate-400">{error}</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center gap-2 text-slate-500">
-                          <Search className="w-8 h-8 opacity-40" />
-                          <p>ไม่พบรายการข้อมูลตามเงื่อนไขที่เลือก</p>
-                        </div>
-                      )}
+                    <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
+                      ไม่พบข้อมูลรายการออเดอร์
                     </td>
                   </tr>
                 )}
@@ -850,33 +774,55 @@ export default function BeverageDashboard() {
   );
 }
 
-// Subcomponent: KPI Summary Card
-function KpiCard({ title, subtitle, value, icon, accentColor, badgeText }) {
-  const colorMap = {
-    emerald: 'from-emerald-500/20 to-teal-500/5 border-emerald-500/30 text-emerald-400',
-    indigo: 'from-indigo-500/20 to-violet-500/5 border-indigo-500/30 text-indigo-400',
-    purple: 'from-purple-500/20 to-pink-500/5 border-purple-500/30 text-purple-400',
-    amber: 'from-amber-500/20 to-orange-500/5 border-amber-500/30 text-amber-400',
-  };
-
+// KPI CARD COMPONENT WITH AMBIENT GLOW
+function KpiCard({ title, value, icon, glow, gradient, badge }) {
   return (
-    <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 p-5 rounded-3xl shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
-      <div className="flex items-start justify-between">
+    <div className="relative group overflow-hidden bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 hover:border-slate-700/80 transition-all duration-300 shadow-xl">
+      {/* Background Ambient Glow */}
+      <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full blur-2xl opacity-15 transition-opacity group-hover:opacity-30 ${glow}`} />
+      
+      <div className="flex justify-between items-start relative z-10">
         <div>
-          <p className="text-xs font-semibold text-slate-400">{title}</p>
-          <h3 className="text-2xl font-black text-white mt-1 tracking-tight">{value}</h3>
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 bg-slate-950/60 px-2 py-0.5 rounded-md border border-slate-800">
+            {badge}
+          </span>
+          <p className="text-xs font-medium text-slate-400 mt-3 mb-1">{title}</p>
+          <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-mono">
+            {value}
+          </h3>
         </div>
-        <div className={`p-3 rounded-2xl bg-gradient-to-br ${colorMap[accentColor]} border shadow-md`}>
+        <div className={`p-3 rounded-2xl bg-gradient-to-br ${gradient} border border-white/10 shadow-lg`}>
           {icon}
         </div>
-      </div>
-      
-      <div className="mt-4 flex items-center justify-between text-[11px]">
-        <span className="text-slate-500 font-medium">{subtitle}</span>
-        <span className="text-slate-400 font-semibold flex items-center gap-0.5">
-          {badgeText} <ArrowUpRight className="w-3 h-3 text-slate-500" />
-        </span>
       </div>
     </div>
   );
 }
+
+// CUSTOM TOOLTIP FOR AREA CHART
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 p-3 rounded-2xl shadow-2xl font-mono">
+        <p className="text-[11px] text-slate-400 mb-1">{label}</p>
+        <p className="text-sm font-bold text-indigo-400">
+          ฿{payload[0].value.toLocaleString()}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
+// CUSTOM TOOLTIP FOR PIE CHART
+const CustomPieTooltip = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 px-3 py-2 rounded-xl shadow-2xl text-xs">
+        <p className="font-semibold text-white">{payload[0].name}</p>
+        <p className="text-slate-400 font-mono mt-0.5">{payload[0].value} ออเดอร์</p>
+      </div>
+    );
+  }
+  return null;
+};
