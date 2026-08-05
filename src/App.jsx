@@ -35,9 +35,9 @@ import {
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
 
 const PAYMENT_COLORS = {
-  ไทยช่วยไทยพลัส: '#10B981', // Emerald 500
-  โอนพร้อมเพย์: '#3B82F6',   // Blue 500
-  เงินสด: '#F59E0B',         // Amber 500
+  ไทยช่วยไทยพลัส: '#10B981',
+  โอนพร้อมเพย์: '#3B82F6',
+  เงินสด: '#F59E0B',
   Unknown: '#64748B',
 };
 
@@ -46,15 +46,15 @@ const monthNamesThai = [
   'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
 ];
 
-// 🧠 1. Smart Universal Date Parser (แก้สลับเดือน/ปี/วัน + แปลง UTC+7 เวลาไทย)
-const parseDateTime = (datetimeString) => {
+// [MODIFIED] Smart Universal Date Parser with Dual-Format Support (DD/MM vs MM/DD)
+const parseDateTime = (datetimeString, preferUSFormat = false) => {
   if (!datetimeString) return null;
   let str = String(datetimeString).trim();
   if (!str) return null;
 
   let year = 0, month = 0, day = 0, hour = 0, minute = 0;
 
-  // 1.1 แปลงเวลา ISO (ที่มี T หรือ Z) ให้ตรงกับ Local Timezone ไทย (UTC+7)
+  // 1. Handle ISO strings with T or Z (e.g., 2026-08-05T10:30:00.000Z)
   if (str.includes('T')) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
@@ -68,7 +68,7 @@ const parseDateTime = (datetimeString) => {
     }
   }
 
-  // 1.2 แยกวันที่ และ เวลา
+  // 2. Separate Date and Time
   const parts = str.split(/\s+/);
   const dateStr = parts[0];
   const timeStr = parts[1] || '';
@@ -79,7 +79,7 @@ const parseDateTime = (datetimeString) => {
     minute = parseInt(tParts[1], 10) || 0;
   }
 
-  // 1.3 Smart Detection แยกแยะ Year, Month, Day ป้องกันการสลับตำแหน่ง
+  // 3. Parse Date Parts (separated by - or / or .)
   const dParts = dateStr.split(/[-/.]/);
   if (dParts.length >= 3) {
     const p0 = parseInt(dParts[0], 10);
@@ -87,20 +87,45 @@ const parseDateTime = (datetimeString) => {
     const p2 = parseInt(dParts[2], 10);
 
     if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
-      // รูปแบบ YYYY-MM-DD หรือ YYYY/MM/DD (ปีอยู่หน้าสุด p0)
+      // Case A: YYYY-MM-DD or YYYY/MM/DD (Year is first p0)
       if (p0 > 31 || dParts[0].length === 4) {
         year = p0;
-        if (p1 > 12) { month = p2; day = p1; }
-        else { month = p1; day = p2; } // p2 คือวัน (parts[2]) ถูกต้อง 100%
+        // In YYYY-MM-DD standard, middle p1 is ALWAYS Month, p2 is Day
+        if (p1 <= 12 && p2 <= 31) {
+          month = p1;
+          day = p2;
+        } else if (p2 <= 12 && p1 <= 31) {
+          month = p2;
+          day = p1;
+        } else {
+          month = p1;
+          day = p2;
+        }
       } 
-      // รูปแบบ DD/MM/YYYY หรือ DD-MM-2569 (ปีอยู่หลังสุด p2)
+      // Case B: DD/MM/YYYY or MM/DD/YYYY (Year is last p2)
       else if (p2 > 31 || dParts[2].length === 4) {
         year = p2;
-        if (p0 > 12) { day = p0; month = p1; }
-        else if (p1 > 12) { month = p0; day = p1; }
-        else { day = p0; month = p1; } // มาตรฐาน DD/MM/YYYY สำหรับไทย
+        if (p0 > 12) { 
+          // p0 > 12 means p0 MUST be Day (e.g. 25/08/2026 => Thai DD/MM)
+          day = p0; 
+          month = p1; 
+        } else if (p1 > 12) { 
+          // p1 > 12 means p1 MUST be Day (e.g. 08/25/2026 => US MM/DD)
+          month = p0; 
+          day = p1; 
+        } else { 
+          // Both p0 and p1 <= 12 (e.g. 08/05/2026 vs 05/08/2026)
+          // [MODIFIED] Auto-switch based on detected Google Sheet locale
+          if (preferUSFormat) {
+            month = p0; // p0 is Month
+            day = p1;   // p1 is Day
+          } else {
+            day = p0;   // p0 is Day
+            month = p1; // p1 is Month
+          }
+        }
       } 
-      // รูปแบบปี 2 หลักย่อ (เช่น 02/08/26 หรือ 02/08/69)
+      // Case C: 2-digit Year (e.g. 05/08/26)
       else {
         day = p0;
         month = p1;
@@ -109,7 +134,7 @@ const parseDateTime = (datetimeString) => {
     }
   }
 
-  // Fallback แปลงผ่าน Date Object หากกรณีเป็นข้อความเวลาอื่นๆ
+  // Fallback to native JS Date
   if (!year || !month || !day) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
@@ -125,7 +150,7 @@ const parseDateTime = (datetimeString) => {
     return null;
   }
 
-  // แปลง พ.ศ. (ปี > 2400) ให้เป็น ค.ศ. สำหรับใช้ประมวลผลภายใน
+  // Convert B.E. (พ.ศ.) to C.E. (ค.ศ.)
   if (year > 2400) year -= 543;
 
   return buildParsedResult(year, month, day, hour, minute);
@@ -139,7 +164,7 @@ const buildParsedResult = (year, month, day, hour, minute) => {
   const min = String(minute).padStart(2, '0');
 
   return {
-    isoDate: `${yyyy}-${mm}-${dd}`,                             // "2026-08-02"
+    isoDate: `${yyyy}-${mm}-${dd}`,                             // "2026-08-05"
     isoMonth: `${yyyy}-${mm}`,                                  // "2026-08"
     hourStr: `${hh}:00`,                                        // "10:00"
     timeStr: `${hh}:${min}`,                                    // "10:30"
@@ -149,25 +174,24 @@ const buildParsedResult = (year, month, day, hour, minute) => {
     hour,
     yearBE: year + 543,
     shortYearBE: String(year + 543).slice(-2),
-    displayShortBE: `${parseInt(dd, 10)} ${monthNamesThai[month]} ${String(year + 543).slice(-2)}`, // "2 ส.ค. 69"
-    displayDayMonth: `${parseInt(dd, 10)} ${monthNamesThai[month]}`,                                // "2 ส.ค."
+    displayShortBE: `${parseInt(dd, 10)} ${monthNamesThai[month]} ${String(year + 543).slice(-2)}`, // "5 ส.ค. 69"
+    displayDayMonth: `${parseInt(dd, 10)} ${monthNamesThai[month]}`,                                // "5 ส.ค."
     displayMonthBE: `${monthNamesThai[month]} ${String(year + 543).slice(-2)}`                      // "ส.ค. 69"
   };
 };
 
-const formatDateForComparison = (datetimeString) => {
-  const parsed = parseDateTime(datetimeString);
+const formatDateForComparison = (datetimeString, preferUSFormat = false) => {
+  const parsed = parseDateTime(datetimeString, preferUSFormat);
   return parsed ? parsed.isoDate : '';
 };
 
-const formatDateToBE = (datetimeString) => {
-  const parsed = parseDateTime(datetimeString);
+const formatDateToBE = (datetimeString, preferUSFormat = false) => {
+  const parsed = parseDateTime(datetimeString, preferUSFormat);
   if (!parsed) return datetimeString || '-';
   const timeFormatted = parsed.timeStr !== '00:00' ? ` ${parsed.timeStr}` : '';
   return `${String(parsed.day).padStart(2, '0')}/${String(parsed.month).padStart(2, '0')}/${parsed.yearBE}${timeFormatted}`;
 };
 
-// Normalize backend field names to match frontend UI expectations
 const normalizeOrder = (raw) => {
   if (!raw || typeof raw !== 'object') return raw;
   
@@ -285,10 +309,26 @@ export default function BeverageDashboard() {
     fetchData();
   }, []);
 
+  // [MODIFIED] Auto-detect if Google Sheets sends dates in US MM/DD/YYYY format
+  const isUSDateFormat = useMemo(() => {
+    if (!data || data.length === 0) return false;
+    for (const item of data) {
+      const dt = String(item.datetime || '').trim().split(' ')[0];
+      const parts = dt.split(/[-/.]/);
+      if (parts.length >= 3 && parts[2].length === 4) {
+        const p0 = parseInt(parts[0], 10);
+        const p1 = parseInt(parts[1], 10);
+        if (p1 > 12) return true;  // e.g. 08/25/2026 => MM/DD/YYYY
+        if (p0 > 12) return false; // e.g. 25/08/2026 => DD/MM/YYYY
+      }
+    }
+    return false;
+  }, [data]);
+
   useEffect(() => {
     if (data.length > 0 && !selectedYear) {
       const years = data
-        .map((item) => formatDateForComparison(item.datetime).split('-')[0])
+        .map((item) => formatDateForComparison(item.datetime, isUSDateFormat).split('-')[0])
         .filter(Boolean)
         .sort();
       if (years.length > 0) {
@@ -296,28 +336,28 @@ export default function BeverageDashboard() {
         setSelectedYear(latestYear);
       }
     }
-  }, [data, selectedYear]);
+  }, [data, selectedYear, isUSDateFormat]);
 
   const availableYears = useMemo(() => {
     const years = new Set(
       data
-        .map((item) => formatDateForComparison(item.datetime).split('-')[0])
+        .map((item) => formatDateForComparison(item.datetime, isUSDateFormat).split('-')[0])
         .filter(Boolean)
     );
     if (selectedYear) years.add(selectedYear);
     return Array.from(years).sort().reverse();
-  }, [data, selectedYear]);
+  }, [data, selectedYear, isUSDateFormat]);
 
   const latestAvailableDate = useMemo(() => {
     if (!data || data.length === 0) return '';
     const dates = data
-      .map((item) => formatDateForComparison(item.datetime))
+      .map((item) => formatDateForComparison(item.datetime, isUSDateFormat))
       .filter(Boolean)
       .sort();
     return dates.length > 0 ? dates[dates.length - 1] : '';
-  }, [data]);
+  }, [data, isUSDateFormat]);
 
-  // 🧠 2. ระบบ Smart Fallback คำนวณยอดวันล่าสุดอัตโนมัติ
+  // [MODIFIED] Smart Fallback calculation for Today's Sales
   const todayMetrics = useMemo(() => {
     const now = new Date();
     const yCE = now.getFullYear();
@@ -334,7 +374,7 @@ export default function BeverageDashboard() {
         const dt = String(item.datetime || '').trim();
         if (!dt) return false;
 
-        return formatDateForComparison(dt) === isoDate;
+        return formatDateForComparison(dt, isUSDateFormat) === isoDate;
       });
     };
 
@@ -342,7 +382,6 @@ export default function BeverageDashboard() {
     let isFallbackToLatest = false;
     let todayOrders = getOrdersForIsoDate(todayIso);
 
-    // หากวันนี้มี 0 ออเดอร์ สลับไปใช้วันล่าสุดที่มีข้อมูลใน Google Sheet อัตโนมัติ
     if (todayOrders.length === 0 && latestAvailableDate) {
       targetIso = latestAvailableDate;
       todayOrders = getOrdersForIsoDate(latestAvailableDate);
@@ -356,22 +395,22 @@ export default function BeverageDashboard() {
       targetIso,
       isFallbackToLatest
     };
-  }, [data, hideCanceled, latestAvailableDate]);
+  }, [data, hideCanceled, latestAvailableDate, isUSDateFormat]);
 
   const displayData = useMemo(() => {
     let filtered = data;
 
     if (filterMode === 'day' && selectedDate) {
       filtered = filtered.filter(
-        (item) => formatDateForComparison(item.datetime) === selectedDate
+        (item) => formatDateForComparison(item.datetime, isUSDateFormat) === selectedDate
       );
     } else if (filterMode === 'month' && selectedMonth) {
       filtered = filtered.filter((item) =>
-        formatDateForComparison(item.datetime).startsWith(selectedMonth)
+        formatDateForComparison(item.datetime, isUSDateFormat).startsWith(selectedMonth)
       );
     } else if (filterMode === 'year' && selectedYear) {
       filtered = filtered.filter((item) =>
-        formatDateForComparison(item.datetime).startsWith(selectedYear)
+        formatDateForComparison(item.datetime, isUSDateFormat).startsWith(selectedYear)
       );
     }
 
@@ -403,6 +442,7 @@ export default function BeverageDashboard() {
     selectedYear,
     hideCanceled,
     filterMode,
+    isUSDateFormat
   ]);
 
   const metrics = useMemo(() => {
@@ -434,6 +474,7 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
+  // [MODIFIED] Chart data calculation synchronized with auto-detected date locale
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach((item) => {
@@ -449,7 +490,7 @@ export default function BeverageDashboard() {
 
     displayData.forEach((item) => {
       if (!item.datetime) return;
-      const parsed = parseDateTime(item.datetime);
+      const parsed = parseDateTime(item.datetime, isUSDateFormat);
       if (!parsed) return;
 
       let sortKey = '';
@@ -480,11 +521,11 @@ export default function BeverageDashboard() {
       .map((key) => trendMap[key]);
 
     return { paymentData, trendData };
-  }, [displayData, filterMode, selectedDate, selectedMonth, selectedYear]);
+  }, [displayData, filterMode, selectedDate, selectedMonth, selectedYear, isUSDateFormat]);
 
   let chartTitle = 'แนวโน้มยอดขายรายวัน (Daily Sales Trend)';
   if (filterMode === 'day' && selectedDate)
-    chartTitle = `แนวโน้มยอดขายรายชั่วโมง (วันที่ ${formatDateToBE(selectedDate)})`;
+    chartTitle = `แนวโน้มยอดขายรายชั่วโมง (วันที่ ${formatDateToBE(selectedDate, false)})`;
   if (filterMode === 'year' && selectedYear)
     chartTitle = `แนวโน้มยอดขายรายเดือน (ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})`;
 
@@ -633,9 +674,9 @@ export default function BeverageDashboard() {
             <div className="flex items-center gap-2.5">
               <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
               <span>
-                ไม่พบบันทึกรายการสำหรับวันที่ <strong className="text-white font-mono">{formatDateToBE(selectedDate)}</strong>
+                ไม่พบบันทึกรายการสำหรับวันที่ <strong className="text-white font-mono">{formatDateToBE(selectedDate, false)}</strong>
                 {latestAvailableDate && (
-                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong className="text-amber-200 font-mono">{formatDateToBE(latestAvailableDate)}</strong>)</>
+                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong className="text-amber-200 font-mono">{formatDateToBE(latestAvailableDate, false)}</strong>)</>
                 )}
               </span>
             </div>
@@ -652,11 +693,10 @@ export default function BeverageDashboard() {
 
         {/* METRICS GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-          {/* 🌟 การ์ดแสดงผลยอดขายวันล่าสุดพร้อม Badge วันที่แบบอัตโนมัติ */}
           <KpiCard
             title={
               todayMetrics.isFallbackToLatest
-                ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})`
+                ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso, false)})`
                 : "ยอดขายวันนี้ (Today)"
             }
             value={`฿${todayMetrics.todaySales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -862,7 +902,7 @@ export default function BeverageDashboard() {
                         className="hover:bg-slate-800/30 transition-colors group"
                       >
                         <td className="px-6 py-4 whitespace-nowrap font-mono text-slate-400">
-                          {formatDateToBE(order.datetime)}
+                          {formatDateToBE(order.datetime, isUSDateFormat)}
                         </td>
                         <td className="px-6 py-4 font-mono font-medium text-indigo-400">
                           #{order.billId}
@@ -936,7 +976,6 @@ export default function BeverageDashboard() {
 function KpiCard({ title, value, icon, glow, gradient, badge }) {
   return (
     <div className="relative group overflow-hidden bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 hover:border-slate-700/80 transition-all duration-300 shadow-xl">
-      {/* Background Ambient Glow */}
       <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full blur-2xl opacity-15 transition-opacity group-hover:opacity-30 ${glow}`} />
       
       <div className="flex justify-between items-start relative z-10">
@@ -978,7 +1017,7 @@ const CustomPieTooltip = ({ active, payload }) => {
     return (
       <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 px-3 py-2 rounded-xl shadow-2xl text-xs">
         <p className="font-semibold text-white">{payload[0].name}</p>
-        <p className="text-slate-400 font-mono mt-0.5">{payload[0].value} บิล</p>
+        <p className="text-slate-400 font-mono mt-0.5">{payload[0].value} ออเดอร์</p>
       </div>
     );
   }
