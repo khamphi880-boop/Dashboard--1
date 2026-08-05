@@ -1,19 +1,44 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
 } from 'recharts';
-import { 
-  ShoppingCart, DollarSign, TrendingUp, Package, AlertCircle, 
-  MapPin, CreditCard, CheckCircle2, Calendar, Sun, Search, 
-  Sparkles, RefreshCw, Filter, Layers, ArrowUpRight, X
+import {
+  ShoppingCart,
+  DollarSign,
+  TrendingUp,
+  Package,
+  AlertCircle,
+  MapPin,
+  CreditCard,
+  CheckCircle2,
+  Calendar,
+  Search,
+  Sparkles,
+  RefreshCw,
+  Zap,
+  Layers,
+  Activity,
+  Sun,
+  X,
+  ArrowUpRight,
 } from 'lucide-react';
 
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
+const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
+
 const PAYMENT_COLORS = {
-  "ไทยช่วยไทยพลัส": "#10b981",
-  "โอนพร้อมเพย์": "#6366f1",
-  "เงินสด": "#f59e0b"
+  ไทยช่วยไทยพลัส: '#10B981', // Emerald 500
+  โอนพร้อมเพย์: '#3B82F6',   // Blue 500
+  เงินสด: '#F59E0B',         // Amber 500
+  Unknown: '#64748B',
 };
 
 // Normalize backend field names to match frontend UI expectations
@@ -23,11 +48,11 @@ const normalizeOrder = (raw) => {
   return {
     ...raw,
     datetime: raw.datetime || raw.timestampStr || raw['วัน-เวลา'] || raw['เวลา'] || '',
-    billId: raw.billId || raw.orderId || raw['รหัสบิล'] || '',
-    customer: raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || '',
+    billId: raw.billId || raw.orderId || raw['รหัสบิล'] || raw['บิล'] || '',
+    customer: raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || raw['ลูกค้า'] || '',
     items: raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '',
     total: parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0,
-    payment: raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || '',
+    payment: raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || raw['ชำระ'] || 'เงินสด',
     status: raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '',
     deliveryPoint: raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '',
     address: raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '',
@@ -35,13 +60,14 @@ const normalizeOrder = (raw) => {
   };
 };
 
+// Helper Format Date (BE & CE compatible)
 const formatDateForComparison = (datetimeString) => {
-  if (!datetimeString) return "";
+  if (!datetimeString) return '';
   try {
-    let str = String(datetimeString).trim();
+    const trimmed = String(datetimeString).trim();
 
-    if (str.includes('T')) {
-      const d = new Date(str);
+    if (trimmed.includes('T')) {
+      const d = new Date(trimmed);
       if (!isNaN(d.getTime())) {
         let y = d.getFullYear();
         if (y > 2400) y -= 543;
@@ -51,55 +77,32 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
-    const dateOnly = str.split(' ')[0].trim();
+    const datePart = trimmed.split(' ')[0];
 
-    if (dateOnly.includes('/')) {
-      const parts = dateOnly.split('/');
-      if (parts.length >= 3) {
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10);
-        let year = parseInt(parts[2], 10);
-
-        if (isNaN(day) || isNaN(month) || isNaN(year)) return "";
-        if (year > 2400) year -= 543;
-
-        const formattedMonth = String(month).padStart(2, '0');
-        const formattedDay = String(day).padStart(2, '0');
-        return `${year}-${formattedMonth}-${formattedDay}`;
+    if (datePart.includes('-')) {
+      const parts = datePart.split('-');
+      if (parts[0].length === 4) {
+        let y = parseInt(parts[0], 10);
+        if (y > 2400) y -= 543;
+        return `${y}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else {
+        let y = parseInt(parts[2], 10);
+        if (y > 2400) y -= 543;
+        return `${y}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
       }
     }
 
-    if (dateOnly.includes('-')) {
-      const parts = dateOnly.split('-');
-      if (parts.length >= 3) {
-        if (parts[0].length === 4) {
-          let year = parseInt(parts[0], 10);
-          if (year > 2400) year -= 543;
-          const month = String(parseInt(parts[1], 10)).padStart(2, '0');
-          const day = String(parseInt(parts[2], 10)).padStart(2, '0'); 
-          return `${year}-${month}-${day}`;
-        } else {
-          let year = parseInt(parts[2], 10);
-          if (year > 2400) year -= 543;
-          const month = String(parseInt(parts[1], 10)).padStart(2, '0');
-          const day = String(parseInt(parts[0], 10)).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        }
-      }
+    if (datePart.includes('/')) {
+      const [day, month, yearRaw] = datePart.split('/');
+      let year = parseInt(yearRaw, 10);
+      if (isNaN(year)) return '';
+      if (year > 2400) year -= 543;
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
 
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) {
-      let y = d.getFullYear();
-      if (y > 2400) y -= 543;
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    }
-
-    return "";
+    return '';
   } catch (e) {
-    return "";
+    return '';
   }
 };
 
@@ -147,9 +150,7 @@ const formatDateToBE = (datetimeString) => {
       return datetimeString;
     }
 
-    if (year < 2400) {
-      year += 543;
-    }
+    if (year < 2400) year += 543;
 
     const dd = String(day).padStart(2, '0');
     const mm = String(month).padStart(2, '0');
@@ -161,19 +162,20 @@ const formatDateToBE = (datetimeString) => {
   }
 };
 
-// Custom Glassmorphic Tooltip for Recharts
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-slate-900/90 backdrop-blur-md text-white border border-slate-700/50 p-3.5 rounded-xl shadow-2xl space-y-1">
-        <p className="text-xs text-slate-400 font-medium">{label}</p>
-        <p className="text-base font-bold text-indigo-400">
-          ฿{Number(payload[0].value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-        </p>
-      </div>
-    );
+// Generate consistent avatar color based on name
+const getAvatarColor = (name = '') => {
+  const colors = [
+    'from-indigo-500 to-purple-500',
+    'from-blue-500 to-cyan-500',
+    'from-emerald-500 to-teal-500',
+    'from-orange-500 to-amber-500',
+    'from-pink-500 to-rose-500',
+  ];
+  let charCode = 0;
+  for (let i = 0; i < name.length; i++) {
+    charCode += name.charCodeAt(i);
   }
-  return null;
+  return colors[charCode % colors.length];
 };
 
 export default function BeverageDashboard() {
@@ -181,16 +183,17 @@ export default function BeverageDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  const [filterMode, setFilterMode] = useState('year'); 
+
+  const [filterMode, setFilterMode] = useState('year');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
-  const [selectedYear, setSelectedYear] = useState(''); 
-  
+  const [selectedYear, setSelectedYear] = useState('');
+
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
-  const DATA_URL = "https://script.google.com/macros/s/AKfycbzcNRoFsQ2gkzcLQ21qQdYx1VR8S0m1xMj3hN2TJFkp2Dx2e7wrVc9MInQtssJEgeL0/exec";
+  const DATA_URL =
+    'https://script.google.com/macros/s/AKfycbz8AiaKwcO7IhRqwCEsZhpPmTw9mIkWsnKB-2MDti0-hpDFQ6FGM4ExfijSDfdXm8mn/exec';
 
   const fetchData = async () => {
     setLoading(true);
@@ -199,59 +202,58 @@ export default function BeverageDashboard() {
       const response = await fetch(DATA_URL);
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error("404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy ไปแล้ว");
+          throw new Error('404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy');
         }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const result = await response.json();
-      
+
       let parsedData = [];
       if (Array.isArray(result)) {
-         parsedData = result;
+        parsedData = result;
       } else if (result && result.data && Array.isArray(result.data)) {
-         parsedData = result.data;
+        parsedData = result.data;
       }
 
       if (parsedData.length > 0) {
         if (Array.isArray(parsedData[0])) {
-           const headers = parsedData[0];
-           const mappedData = parsedData.slice(1).map(row => {
-              const obj = {};
-              headers.forEach((header, index) => {
-                 const cleanHeader = String(header || '').trim();
-                 if (cleanHeader.includes('วัน-เวลา') || cleanHeader.includes('เวลา')) obj.datetime = row[index];
-                 else if (cleanHeader.includes('รหัสบิล') || cleanHeader.includes('บิล')) obj.billId = row[index];
-                 else if (cleanHeader.includes('ชื่อลูกค้า') || cleanHeader.includes('ลูกค้า')) obj.customer = row[index];
-                 else if (cleanHeader.includes('รายการ')) obj.items = row[index];
-                 else if (cleanHeader.includes('ยอดรวม')) obj.total = parseFloat(row[index]) || 0;
-                 else if (cleanHeader.includes('ช่องทางชำระ') || cleanHeader.includes('ชำระ')) obj.payment = row[index];
-                 else if (cleanHeader.includes('สถานะ')) obj.status = row[index];
-                 else if (cleanHeader.includes('จุดจัดส่ง')) obj.deliveryPoint = row[index];
-                 else if (cleanHeader.includes('ที่อยู่')) obj.address = row[index];
-                 else if (cleanHeader.includes('หมายเหตุ')) obj.remark = row[index];
-                 else obj[cleanHeader] = row[index];
-              });
-              return normalizeOrder(obj);
-           });
-           setData(mappedData);
-           setIsLive(true); 
+          const headers = parsedData[0];
+          const mappedData = parsedData.slice(1).map((row) => {
+            const obj = {};
+            headers.forEach((header, index) => {
+              const cleanHeader = String(header || '').trim();
+              if (cleanHeader.includes('วัน-เวลา') || cleanHeader.includes('เวลา')) obj.datetime = row[index];
+              else if (cleanHeader.includes('รหัสบิล') || cleanHeader.includes('บิล')) obj.billId = row[index];
+              else if (cleanHeader.includes('ชื่อลูกค้า') || cleanHeader.includes('ลูกค้า')) obj.customer = row[index];
+              else if (cleanHeader.includes('รายการ')) obj.items = row[index];
+              else if (cleanHeader.includes('ยอดรวม')) obj.total = parseFloat(row[index]) || 0;
+              else if (cleanHeader.includes('ช่องทางชำระ') || cleanHeader.includes('ชำระ')) obj.payment = row[index];
+              else if (cleanHeader.includes('สถานะ')) obj.status = row[index];
+              else if (cleanHeader.includes('จุดจัดส่ง')) obj.deliveryPoint = row[index];
+              else if (cleanHeader.includes('ที่อยู่')) obj.address = row[index];
+              else if (cleanHeader.includes('หมายเหตุ')) obj.remark = row[index];
+              else obj[cleanHeader] = row[index];
+            });
+            return normalizeOrder(obj);
+          });
+          setData(mappedData);
+          setIsLive(true);
         } else {
           const normalizedData = parsedData.map(normalizeOrder);
           setData(normalizedData);
-          setIsLive(true); 
+          setIsLive(true);
         }
       } else {
-         setData([]); 
-         setIsLive(false); 
-         setError("ไม่พบข้อมูลจากระบบ (Empty Data)");
+        setData([]);
+        setIsLive(false);
+        setError('ไม่พบข้อมูลจากระบบ (Empty Data)');
       }
     } catch (err) {
-      console.error("Error fetching data:", err);
-      setData([]); 
-      setIsLive(false); 
-      setError(err.message || "ไม่สามารถดึงข้อมูลได้ (Connection Error)");
-    } font-sans
-    finally {
+      console.error('Error fetching data:', err);
+      setData([]);
+      setIsLive(false);
+      setError(err.message || 'ไม่สามารถดึงข้อมูลได้ (Connection Error)');
+    } finally {
       setLoading(false);
     }
   };
@@ -263,7 +265,7 @@ export default function BeverageDashboard() {
   useEffect(() => {
     if (data.length > 0 && !selectedYear) {
       const years = data
-        .map(item => formatDateForComparison(item.datetime).split('-')[0])
+        .map((item) => formatDateForComparison(item.datetime).split('-')[0])
         .filter(Boolean)
         .sort();
       if (years.length > 0) {
@@ -275,18 +277,18 @@ export default function BeverageDashboard() {
 
   const availableYears = useMemo(() => {
     const years = new Set(
-      data.map(item => formatDateForComparison(item.datetime).split('-')[0]).filter(Boolean)
+      data
+        .map((item) => formatDateForComparison(item.datetime).split('-')[0])
+        .filter(Boolean)
     );
-    if (selectedYear) {
-      years.add(selectedYear);
-    }
+    if (selectedYear) years.add(selectedYear);
     return Array.from(years).sort().reverse();
   }, [data, selectedYear]);
 
   const latestAvailableDate = useMemo(() => {
     if (!data || data.length === 0) return '';
     const dates = data
-      .map(item => formatDateForComparison(item.datetime))
+      .map((item) => formatDateForComparison(item.datetime))
       .filter(Boolean)
       .sort();
     return dates.length > 0 ? dates[dates.length - 1] : '';
@@ -300,7 +302,7 @@ export default function BeverageDashboard() {
     const todayIso = `${yCE}-${m}-${d}`;
 
     const getOrdersForIsoDate = (isoDate) => {
-      return data.filter(item => {
+      return data.filter((item) => {
         const status = item.status || '';
         const isCanceled = status.includes('ยกเลิก') || status.toLowerCase().includes('cancel');
         if (hideCanceled && isCanceled) return false;
@@ -335,62 +337,63 @@ export default function BeverageDashboard() {
     let filtered = data;
 
     if (filterMode === 'day' && selectedDate) {
-      const [sY, sM, sD] = selectedDate.split('-');
-      const sY_BE = parseInt(sY, 10) + 543;
-      const dNum = parseInt(sD, 10);
-      const mNum = parseInt(sM, 10);
-
-      filtered = filtered.filter(item => {
-        const dt = String(item.datetime || '').trim();
-        if (!dt) return false;
-
-        const parsed = formatDateForComparison(dt);
-        if (parsed === selectedDate) return true;
-
-        const patterns = [
-          `${dNum}/${mNum}/${sY_BE}`,
-          `${sD}/${sM}/${sY_BE}`,
-          `${dNum}/${mNum}/${sY}`,
-          `${sD}/${sM}/${sY}`
-        ];
-        return patterns.some(p => dt.includes(p));
-      });
+      filtered = filtered.filter(
+        (item) => formatDateForComparison(item.datetime) === selectedDate
+      );
     } else if (filterMode === 'month' && selectedMonth) {
-      filtered = filtered.filter(item => formatDateForComparison(item.datetime).startsWith(selectedMonth));
+      filtered = filtered.filter((item) =>
+        formatDateForComparison(item.datetime).startsWith(selectedMonth)
+      );
     } else if (filterMode === 'year' && selectedYear) {
-      filtered = filtered.filter(item => formatDateForComparison(item.datetime).startsWith(selectedYear));
+      filtered = filtered.filter((item) =>
+        formatDateForComparison(item.datetime).startsWith(selectedYear)
+      );
     }
 
     if (searchTerm) {
-       const lowerCaseSearch = searchTerm.toLowerCase();
-       filtered = filtered.filter(item => 
-        (item.customer?.toLowerCase() || '').includes(lowerCaseSearch) ||
-        (item.billId?.toLowerCase() || '').includes(lowerCaseSearch) ||
-        (item.address?.toLowerCase() || '').includes(lowerCaseSearch)
+      const lowerCaseSearch = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (item) =>
+          (item.customer?.toLowerCase() || '').includes(lowerCaseSearch) ||
+          (item.billId?.toLowerCase() || '').includes(lowerCaseSearch) ||
+          (item.address?.toLowerCase() || '').includes(lowerCaseSearch)
       );
     }
-    
+
     if (hideCanceled) {
-      filtered = filtered.filter(item => {
+      filtered = filtered.filter((item) => {
         const status = item.status || '';
-        return !status.includes('ยกเลิก') && !status.toLowerCase().includes('cancel');
+        return (
+          !status.includes('ยกเลิก') && !status.toLowerCase().includes('cancel')
+        );
       });
     }
-    
+
     return filtered;
-  }, [data, searchTerm, selectedDate, selectedMonth, selectedYear, hideCanceled, filterMode]);
+  }, [
+    data,
+    searchTerm,
+    selectedDate,
+    selectedMonth,
+    selectedYear,
+    hideCanceled,
+    filterMode,
+  ]);
 
   const metrics = useMemo(() => {
-    const totalSales = displayData.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
+    const totalSales = displayData.reduce(
+      (sum, item) => sum + (parseFloat(item.total) || 0),
+      0
+    );
     const totalOrders = displayData.length;
-    const avgOrderValue = totalOrders > 0 ? (totalSales / totalOrders) : 0;
-    
+    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
+
     let totalItems = 0;
-    displayData.forEach(order => {
-      const itemsStr = order.items || order['รายการสินค้า'] || order['รายการ'] || '';
+    displayData.forEach((order) => {
+      const itemsStr = order.items || '';
       if (itemsStr) {
         const lines = String(itemsStr).split(/\n|,/);
-        lines.forEach(line => {
+        lines.forEach((line) => {
           const trimmed = line.trim();
           if (!trimmed) return;
           const match = trimmed.match(/^(\d+)\s*x/i) || trimmed.match(/x\s*(\d+)/i);
@@ -408,16 +411,19 @@ export default function BeverageDashboard() {
 
   const chartsData = useMemo(() => {
     const paymentMap = {};
-    displayData.forEach(item => {
-      const pm = item.payment || 'ไม่ระบุ';
+    displayData.forEach((item) => {
+      const pm = item.payment || 'เงินสด';
       paymentMap[pm] = (paymentMap[pm] || 0) + 1;
     });
-    const paymentData = Object.keys(paymentMap).map(key => ({ name: key, value: paymentMap[key] }));
+    const paymentData = Object.keys(paymentMap).map((key) => ({
+      name: key,
+      value: paymentMap[key],
+    }));
 
     const trendMap = {};
     const isHourlyMode = filterMode === 'day' && selectedDate;
 
-    displayData.forEach(item => {
+    displayData.forEach((item) => {
       if (item.datetime) {
         const dateFormatted = formatDateForComparison(item.datetime);
         if (!dateFormatted) return;
@@ -439,18 +445,46 @@ export default function BeverageDashboard() {
 
           if (timeStr) {
             sortKey = timeStr.padStart(2, '0');
-            displayKey = sortKey + ":00";
+            displayKey = sortKey + ':00';
           }
         } else if (filterMode === 'year' && selectedYear) {
           sortKey = dateFormatted.substring(0, 7);
           const [yyyy, mm] = dateFormatted.split('-');
-          const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+          const monthNames = [
+            '',
+            'ม.ค.',
+            'ก.พ.',
+            'มี.ค.',
+            'เม.ย.',
+            'พ.ค.',
+            'มิ.ย.',
+            'ก.ค.',
+            'ส.ค.',
+            'ก.ย.',
+            'ต.ค.',
+            'พ.ย.',
+            'ธ.ค.',
+          ];
           const yearBE = parseInt(yyyy, 10) + 543;
           displayKey = `${monthNames[parseInt(mm, 10)]} ${yearBE.toString().slice(-2)}`;
         } else {
           sortKey = dateFormatted;
           const [yyyy, mm, dd] = dateFormatted.split('-');
-          const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+          const monthNames = [
+            '',
+            'ม.ค.',
+            'ก.พ.',
+            'มี.ค.',
+            'เม.ย.',
+            'พ.ค.',
+            'มิ.ย.',
+            'ก.ค.',
+            'ส.ค.',
+            'ก.ย.',
+            'ต.ค.',
+            'พ.ย.',
+            'ธ.ค.',
+          ];
           displayKey = `${parseInt(dd, 10)} ${monthNames[parseInt(mm, 10)]}`;
         }
 
@@ -458,86 +492,81 @@ export default function BeverageDashboard() {
           if (!trendMap[sortKey]) {
             trendMap[sortKey] = { time: displayKey, sales: 0 };
           }
-          trendMap[sortKey].sales += (parseFloat(item.total) || 0);
+          trendMap[sortKey].sales += parseFloat(item.total) || 0;
         }
       }
     });
-    const trendData = Object.keys(trendMap).sort().map(key => trendMap[key]);
+    const trendData = Object.keys(trendMap)
+      .sort()
+      .map((key) => trendMap[key]);
 
     return { paymentData, trendData };
   }, [displayData, filterMode, selectedDate, selectedYear]);
 
-  let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Revenue)";
-  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง (วันที่ ${formatDateToBE(selectedDate)})`;
-  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})`;
-
-  const currentYearBE = selectedYear ? parseInt(selectedYear) + 543 : '';
+  let chartTitle = 'แนวโน้มยอดขายรายวัน (Daily Sales Trend)';
+  if (filterMode === 'day' && selectedDate)
+    chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
+  if (filterMode === 'year' && selectedYear)
+    chartTitle = `แนวโน้มยอดขายรายเดือน ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-slate-100 p-4 sm:p-6 md:p-10 font-sans selection:bg-indigo-500 selection:text-white">
-      {/* Dynamic Background Effects */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="absolute -top-[10%] -left-[10%] w-[45%] h-[45%] rounded-full bg-indigo-600/10 blur-[120px]" />
-        <div className="absolute top-[30%] -right-[10%] w-[40%] h-[40%] rounded-full bg-emerald-600/10 blur-[140px]" />
-      </div>
+    <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white p-4 sm:p-6 lg:p-8">
+      {/* Dynamic Glow Overlay background */}
+      <div className="fixed top-0 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[128px] pointer-events-none" />
+      <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-[128px] pointer-events-none" />
 
-      <div className="max-w-[1550px] mx-auto space-y-8">
+      <div className="max-w-7xl mx-auto space-y-8 relative z-10">
         
-        {/* Top Navigation / Executive Bar */}
-        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl">
+        {/* HEADER SECTION */}
+        <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-[1px] shadow-lg shadow-indigo-500/20">
-              <div className="w-full h-full bg-slate-950 rounded-2xl flex items-center justify-center text-2xl">
-                🥤
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 p-0.5 shadow-lg shadow-indigo-500/20">
+              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                <Sparkles className="w-7 h-7 text-indigo-400" />
               </div>
             </div>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2">
-                  Beverage Analytics
+                <h1 className="text-2xl font-black tracking-tight text-white font-sans">
+                  DRINKHUB <span className="bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent">PRO</span>
                 </h1>
-                <span className="bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs px-2.5 py-0.5 rounded-full font-semibold tracking-wide uppercase">
+                <span className="px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full">
                   Enterprise
                 </span>
               </div>
-              <div className="flex items-center gap-3 mt-1 text-slate-400 text-sm">
-                <span>สรุปยอดขาย Real-time {currentYearBE ? `(ปี พ.ศ. ${currentYearBE})` : ''}</span>
-                <span className="text-slate-700">•</span>
-                
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-slate-400 text-xs font-medium">
+                  Real-time beverage analytics & revenue engine {selectedYear ? `(พ.ศ. ${parseInt(selectedYear) + 543})` : ''}
+                </p>
                 {loading ? (
-                  <span className="flex items-center gap-1.5 text-xs text-amber-400 font-medium">
-                    <RefreshCw size={13} className="animate-spin" /> Syncing...
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20 animate-pulse">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Syncing...
                   </span>
                 ) : error ? (
-                  <span className="flex items-center gap-1.5 text-xs text-rose-400 font-medium">
-                    <AlertCircle size={13} /> Connection Error
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/20">
+                    <AlertCircle className="w-3 h-3" /> API Error
                   </span>
                 ) : (
-                  <span className="flex items-center gap-2 text-xs text-emerald-400 font-medium">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    Live Data Active
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> {isLive ? 'Live Engine' : 'Offline'}
                   </span>
                 )}
               </div>
             </div>
           </div>
-          
-          {/* Controls & Filter Bar */}
-          <div className="flex flex-wrap items-center gap-3">
-            
-            {/* Filter Mode Selector */}
-            <div className="bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800 flex items-center shadow-inner">
+
+          {/* CONTROLS */}
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            {/* Segmented Period Tabs */}
+            <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 shadow-inner">
               {['day', 'month', 'year'].map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setFilterMode(mode)}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all duration-300 ${
+                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 capitalize ${
                     filterMode === mode
-                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-md shadow-indigo-500/25'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   {mode === 'day' ? 'รายวัน' : mode === 'month' ? 'รายเดือน' : 'รายปี'}
@@ -545,205 +574,206 @@ export default function BeverageDashboard() {
               ))}
             </div>
 
-            {/* Date Selector Input */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                <Calendar size={16} />
+            {/* Date Inputs */}
+            <div className="relative flex-1 sm:flex-none min-w-[150px]">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Calendar className="w-4 h-4" />
               </div>
-
               {filterMode === 'day' && (
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block w-full pl-10 pr-9 py-2.5 shadow-sm transition-all focus:outline-none"
+                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
                 />
               )}
-
               {filterMode === 'month' && (
-                <input 
-                  type="month" 
+                <input
+                  type="month"
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block w-full pl-10 pr-9 py-2.5 shadow-sm transition-all focus:outline-none"
+                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
                 />
               )}
-
               {filterMode === 'year' && (
-                <select 
+                <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block w-full pl-10 pr-9 py-2.5 shadow-sm transition-all appearance-none cursor-pointer font-medium focus:outline-none min-w-[140px]"
+                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer font-mono"
                 >
-                  <option value="">เลือกปี (ทั้งหมด)</option>
-                  {availableYears.map(year => (
-                    <option key={year} value={year} className="bg-slate-900 text-white">
-                      พ.ศ. {parseInt(year) + 543}
+                  <option value="">ทั้งหมด (All Years)</option>
+                  {availableYears.map((year) => (
+                    <option key={year} value={year}>
+                      พ.ศ. {parseInt(year) + 543} ({year})
                     </option>
                   ))}
                 </select>
               )}
-
-              {((filterMode === 'day' && selectedDate) || 
-                (filterMode === 'month' && selectedMonth) || 
+              {((filterMode === 'day' && selectedDate) ||
+                (filterMode === 'month' && selectedMonth) ||
                 (filterMode === 'year' && selectedYear)) && (
-                <button 
+                <button
                   onClick={() => {
-                    if(filterMode === 'day') setSelectedDate('');
-                    if(filterMode === 'month') setSelectedMonth('');
-                    if(filterMode === 'year') setSelectedYear('');
+                    if (filterMode === 'day') setSelectedDate('');
+                    if (filterMode === 'month') setSelectedMonth('');
+                    if (filterMode === 'year') setSelectedYear('');
                   }}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                  className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-500 hover:text-slate-300"
                 >
-                  <X size={14} />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            {/* Hide Canceled Toggle */}
-            <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer bg-slate-950/80 px-4 py-2.5 rounded-2xl border border-slate-800 shadow-sm hover:border-slate-700 transition-all select-none">
-              <input 
-                type="checkbox" 
-                checked={hideCanceled} 
+            {/* Toggle Canceled */}
+            <label className="flex items-center gap-2 cursor-pointer bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800/80 text-xs font-medium text-slate-300 hover:border-slate-700 transition-all">
+              <input
+                type="checkbox"
+                checked={hideCanceled}
                 onChange={(e) => setHideCanceled(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950 w-4 h-4 cursor-pointer"
+                className="sr-only peer"
               />
-              ซ่อนออเดอร์ยกเลิก
+              <div className="w-8 h-4 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+              <span>ซ่อนรายการยกเลิก</span>
             </label>
 
-            {/* Sync Button */}
+            {/* Refresh Button */}
             <button 
               onClick={fetchData}
-              className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-2xl text-slate-400 hover:text-white hover:border-slate-700 transition-all shadow-sm"
+              className="p-2 bg-slate-950/80 border border-slate-800/80 rounded-xl text-slate-400 hover:text-white hover:border-slate-700 transition-all shadow-sm"
               title="รีเฟรชข้อมูล"
             >
-              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </header>
 
-        {/* System Notification Banner */}
+        {/* NOTIFICATION BANNER */}
         {data.length > 0 && displayData.length === 0 && filterMode === 'day' && selectedDate && (
-          <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent border border-amber-500/20 rounded-2xl p-4 text-amber-300 flex items-center justify-between text-xs shadow-lg backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <AlertCircle size={18} className="text-amber-400 shrink-0" />
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 text-amber-300 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-lg backdrop-blur-md">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
               <span>
-                ไม่พบข้อมูลในวันที่ <strong className="text-amber-200">{formatDateToBE(selectedDate)}</strong>
+                ไม่พบบันทึกรายการสำหรับวันที่ <strong className="text-white font-mono">{formatDateToBE(selectedDate)}</strong>
                 {latestAvailableDate && (
-                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong className="text-amber-200">{formatDateToBE(latestAvailableDate)}</strong>)</>
+                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong className="text-amber-200 font-mono">{formatDateToBE(latestAvailableDate)}</strong>)</>
                 )}
               </span>
             </div>
             {latestAvailableDate && (
-              <button 
+              <button
                 onClick={() => setSelectedDate(latestAvailableDate)}
-                className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-medium px-3.5 py-1.5 rounded-xl border border-amber-500/30 transition-all shrink-0 flex items-center gap-1.5"
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-md flex items-center gap-1"
               >
-                สลับไปวันที่ล่าสุด <ArrowUpRight size={14} />
+                สลับไปวันที่ล่าสุด <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
         )}
 
-        {/* Key Metrics Cards (Executive KPIs) */}
+        {/* METRICS GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-          
-          <LuxuryKpiCard 
-            title={todayMetrics.isFallbackToLatest ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})` : "ยอดขายวันนี้ (Today)"} 
-            value={`฿${todayMetrics.todaySales.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
-            icon={<Sun size={22} className="text-amber-400" />}
-            subtitle={`${todayMetrics.todayCount} รายการสั่งซื้อ`}
-            highlight={true}
+          <KpiCard
+            title={todayMetrics.isFallbackToLatest ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})` : "ยอดขายวันนี้ (Today)"}
+            value={`฿${todayMetrics.todaySales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            icon={<Sun className="w-6 h-6 text-amber-400" />}
+            glow="bg-amber-500"
+            gradient="from-amber-500/20 to-orange-500/10"
+            badge="Daily"
           />
-
-          <LuxuryKpiCard 
-            title="ยอดขายรวม (Total Revenue)" 
-            value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
-            icon={<DollarSign size={22} className="text-emerald-400" />}
-            subtitle={filterMode === 'year' && selectedYear ? `ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}` : selectedDate ? `วันที่ ${formatDateToBE(selectedDate)}` : "ช่วงเวลาที่เลือกทั้งหมด"}
+          <KpiCard
+            title="ยอดขายรวม (Total Revenue)"
+            value={`฿${metrics.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            icon={<DollarSign className="w-6 h-6 text-emerald-400" />}
+            glow="bg-emerald-500"
+            gradient="from-emerald-500/20 to-teal-500/10"
+            badge="Revenue"
           />
-
-          <LuxuryKpiCard 
-            title="ออเดอร์ทั้งหมด (Orders)" 
-            value={metrics.totalOrders.toLocaleString()} 
-            icon={<ShoppingCart size={22} className="text-indigo-400" />}
-            subtitle="รายการบิลสำเร็จ"
+          <KpiCard
+            title="ออเดอร์ทั้งหมด (Total Orders)"
+            value={metrics.totalOrders.toLocaleString()}
+            icon={<ShoppingCart className="w-6 h-6 text-indigo-400" />}
+            glow="bg-indigo-500"
+            gradient="from-indigo-500/20 to-purple-500/10"
+            badge="Volume"
           />
-
-          <LuxuryKpiCard 
-            title="จำนวนแก้ว/สินค้า (Items)" 
-            value={metrics.totalItems.toLocaleString()} 
-            icon={<Package size={22} className="text-purple-400" />}
-            subtitle="จำนวนชิ้นทั้งหมด"
+          <KpiCard
+            title="แก้ว/สินค้าขายได้ (Total Items)"
+            value={metrics.totalItems.toLocaleString()}
+            icon={<Package className="w-6 h-6 text-purple-400" />}
+            glow="bg-purple-500"
+            gradient="from-purple-500/20 to-pink-500/10"
+            badge="Units"
           />
-
-          <LuxuryKpiCard 
-            title="ยอดเฉลี่ย/บิล (Avg. Bill)" 
-            value={`฿${metrics.avgOrderValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
-            icon={<TrendingUp size={22} className="text-cyan-400" />}
-            subtitle="Average Order Value"
+          <KpiCard
+            title="ยอดเฉลี่ยต่อบิล (Avg. Ticket)"
+            value={`฿${metrics.avgOrderValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            icon={<TrendingUp className="w-6 h-6 text-cyan-400" />}
+            glow="bg-cyan-500"
+            gradient="from-cyan-500/20 to-blue-500/10"
+            badge="Avg/Bill"
           />
         </div>
 
-        {/* Analytics Charts Grid */}
+        {/* CHARTS SECTION */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Main Area Chart (Sales Trend) */}
-          <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl lg:col-span-2 flex flex-col justify-between">
+          {/* Main Area Chart */}
+          <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl lg:col-span-2">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                  <Sparkles size={18} className="text-indigo-400" />
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-indigo-400" />
                   {chartTitle}
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">กราฟแสดงการเติบโตและสถิติตามช่วงเวลา</p>
+                <p className="text-xs text-slate-400 mt-0.5">ภาพรวมแนวโน้มรายได้ตามช่วงเวลา</p>
               </div>
             </div>
-
-            <div className="h-[320px] w-full">
+            
+            <div className="h-[300px] w-full">
               {chartsData.trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartsData.trendData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                  <AreaChart data={chartsData.trendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                     <defs>
-                      <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0}/>
+                      <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366F1" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#6366F1" stopOpacity={0.0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} tickFormatter={(val) => `฿${val}`} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1E293B" />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={(val) => `฿${val}`} />
                     <RechartsTooltip content={<CustomTooltip />} />
-                    <Area 
-                      type="monotone" 
-                      dataKey="sales" 
-                      stroke="#818cf8" 
-                      strokeWidth={3} 
-                      fillOpacity={1} 
-                      fill="url(#colorSales)" 
-                      activeDot={{ r: 6, fill: '#818cf8', stroke: '#fff', strokeWidth: 2 }} 
+                    <Area
+                      type="monotone"
+                      dataKey="sales"
+                      stroke="#6366F1"
+                      strokeWidth={3}
+                      fillOpacity={1}
+                      fill="url(#salesGradient)"
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-2">
-                  <Layers size={32} strokeWidth={1.5} />
-                  <span className="text-xs">ไม่มีข้อมูลกราฟในช่วงเวลานี้</span>
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs">
+                  <Layers className="w-8 h-8 mb-2 opacity-40" />
+                  ไม่มีข้อมูลสำหรับแสดงผลกราฟในเลือกช่วงเวลานี้
                 </div>
               )}
             </div>
           </div>
 
-          {/* Payment Method Pie Chart */}
+          {/* Donut Payment Chart */}
           <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl flex flex-col justify-between">
             <div>
-              <h2 className="text-base font-semibold text-white flex items-center gap-2 mb-1">
-                <CreditCard size={18} className="text-emerald-400" /> สัดส่วนการชำระเงิน
+              <h2 className="text-base font-bold text-white flex items-center gap-2 mb-1">
+                <CreditCard className="w-4 h-4 text-emerald-400" />
+                ช่องทางชำระเงิน (Payments)
               </h2>
-              <p className="text-xs text-slate-400">แยกตามประเภท Payment Channels</p>
+              <p className="text-xs text-slate-400">สัดส่วนการชำระเงินของลูกค้า</p>
             </div>
 
-            <div className="h-[250px] w-full relative flex items-center justify-center my-4">
+            <div className="h-[200px] w-full my-2 relative flex items-center justify-center">
               {chartsData.paymentData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -751,136 +781,150 @@ export default function BeverageDashboard() {
                       data={chartsData.paymentData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={65}
-                      outerRadius={95}
+                      innerRadius={60}
+                      outerRadius={85}
                       paddingAngle={6}
                       dataKey="value"
-                      stroke="none"
                     >
                       {chartsData.paymentData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PAYMENT_COLORS[entry.name] || COLORS[index % COLORS.length]} />
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={PAYMENT_COLORS[entry.name] || COLORS[index % COLORS.length]}
+                          stroke="transparent"
+                        />
                       ))}
                     </Pie>
-                    <RechartsTooltip content={<CustomTooltip />} />
-                    <Legend 
-                      verticalAlign="bottom" 
-                      height={36} 
-                      iconType="circle"
-                      formatter={(value) => <span className="text-xs text-slate-300 font-medium">{value}</span>}
-                    />
+                    <RechartsTooltip content={<CustomPieTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
-                  ไม่มีข้อมูลสัดส่วน
-                </div>
+                <div className="text-slate-500 text-xs">ไม่มีข้อมูล</div>
               )}
+            </div>
+
+            {/* Custom Payment Legend */}
+            <div className="space-y-2">
+              {chartsData.paymentData.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-800/50">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: PAYMENT_COLORS[item.name] || COLORS[idx % COLORS.length] }}
+                    />
+                    <span className="text-slate-300 font-medium">{item.name}</span>
+                  </div>
+                  <span className="font-mono font-bold text-white">{item.value} บิล</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Executive Data Table Section */}
+        {/* ORDERS TABLE SECTION */}
         <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden">
           
-          {/* Table Header Controls */}
-          <div className="p-6 border-b border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="p-6 border-b border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h2 className="text-lg font-bold text-white tracking-tight">
-                รายการสั่งซื้อทั้งหมด
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                รายการออเดอร์ล่าสุด (Live Transactions)
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {selectedYear ? `ข้อมูลประจำปี พ.ศ. ${parseInt(selectedYear) + 543}` : 'แสดงข้อมูลรายการบิลย้อนหลัง'}
-              </p>
+              <p className="text-xs text-slate-400 mt-0.5">แสดง {displayData.length} รายการที่ตรงตามเงื่อนไข</p>
             </div>
 
             <div className="relative w-full sm:w-72">
-              <input 
-                type="text" 
-                placeholder="ค้นหาชื่อลูกค้า, รหัสบิล, ที่อยู่..." 
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-2xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                placeholder="ค้นหาชื่อลูกค้า, รหัสบิล, ที่อยู่..."
+                className="w-full bg-slate-950/90 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                disabled={data.length === 0}
               />
-              <Search size={16} className="text-slate-500 absolute left-3.5 top-3" />
             </div>
           </div>
-          
-          {/* Main Table */}
+
           <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left text-slate-300">
-              <thead className="bg-slate-950/60 uppercase text-[11px] font-semibold text-slate-400 border-b border-slate-800/80 tracking-wider">
-                <tr>
-                  <th scope="col" className="px-6 py-4">วัน-เวลา</th>
-                  <th scope="col" className="px-6 py-4">รหัสบิล</th>
-                  <th scope="col" className="px-6 py-4">ลูกค้า & ที่อยู่</th>
-                  <th scope="col" className="px-6 py-4">รายการสินค้า</th>
-                  <th scope="col" className="px-6 py-4 text-right">ยอดรวม</th>
-                  <th scope="col" className="px-6 py-4 text-center">สถานะ</th>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800/80 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  <th scope="col" className="px-6 py-4">วัน-เวลา (Time)</th>
+                  <th scope="col" className="px-6 py-4">รหัสบิล (Bill ID)</th>
+                  <th scope="col" className="px-6 py-4">ลูกค้า (Customer)</th>
+                  <th scope="col" className="px-6 py-4">รายการสินค้า (Items)</th>
+                  <th scope="col" className="px-6 py-4 text-right">ยอดรวม (Total)</th>
+                  <th scope="col" className="px-6 py-4 text-center">สถานะ (Status)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50">
+              <tbody className="divide-y divide-slate-800/50 text-xs">
                 {loading && data.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-16 text-center text-slate-500">
-                      <div className="flex flex-col items-center justify-center gap-3">
-                        <RefreshCw size={24} className="animate-spin text-indigo-500" />
-                        <span className="text-sm font-medium">กำลังประมวลผลข้อมูล Real-time...</span>
+                    <td colSpan="6" className="px-6 py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center gap-2">
+                        <RefreshCw className="w-6 h-6 animate-spin text-indigo-400" />
+                        <span>กำลังเชื่อมต่อฐานข้อมูล...</span>
                       </div>
                     </td>
                   </tr>
                 ) : displayData.length > 0 ? (
                   displayData.map((order, index) => {
-                    const isCanceled = (order.status || '').includes('ยกเลิก') || (order.status || '').toLowerCase().includes('cancel');
-                    const firstChar = (order.customer || 'C').charAt(0).toUpperCase();
+                    const isCanceled =
+                      (order.status || '').includes('ยกเลิก') ||
+                      (order.status || '').toLowerCase().includes('cancel');
 
                     return (
-                      <tr key={order.billId || index} className="hover:bg-slate-800/30 transition-colors group">
-                        <td className="px-6 py-4 font-mono text-slate-400 whitespace-nowrap">
+                      <tr
+                        key={order.billId || index}
+                        className="hover:bg-slate-800/30 transition-colors group"
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-slate-400">
                           {formatDateToBE(order.datetime)}
                         </td>
-                        <td className="px-6 py-4 font-mono text-indigo-400 font-medium">
+                        <td className="px-6 py-4 font-mono font-medium text-indigo-400">
                           #{order.billId}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs shadow-md">
-                              {firstChar}
+                            <div className={`w-8 h-8 rounded-full bg-gradient-to-tr ${getAvatarColor(order.customer)} flex items-center justify-center font-bold text-white shadow-md`}>
+                              {order.customer ? order.customer.charAt(0).toUpperCase() : '?'}
                             </div>
                             <div>
-                              <div className="font-semibold text-slate-100 group-hover:text-indigo-300 transition-colors">
-                                {order.customer || 'ลูกค้าทั่วไป'}
-                              </div>
-                              {order.address && (
-                                <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                                  <MapPin size={11} className="text-slate-500 shrink-0" /> 
-                                  <span className="truncate max-w-[200px]">{order.address}</span>
-                                </div>
-                              )}
+                              <p className="font-semibold text-slate-200">{order.customer || 'ลูกค้าทั่วไป'}</p>
+                              <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3 text-slate-600" /> {order.address || 'รับที่ร้าน'}
+                              </p>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-wrap gap-1.5 max-w-xs">
-                            {String(order.items || order['รายการสินค้า'] || '-').split(/\n|,/).map((item, i) => (
-                              <span key={i} className="bg-slate-950/80 border border-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-medium">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {String(order.items || '-').split(/\n|,/).map((item, i) => (
+                              <span
+                                key={i}
+                                className="bg-slate-950/80 border border-slate-800 text-slate-300 text-[11px] px-2 py-0.5 rounded-md truncate max-w-[200px]"
+                                title={item.trim()}
+                              >
                                 {item.trim()}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          <span className="font-bold text-sm text-emerald-400">
-                            ฿{Number(order.total).toLocaleString(undefined, {minimumFractionDigits: 2})}
-                          </span>
+                        <td className="px-6 py-4 text-right font-mono font-bold text-emerald-400 text-sm">
+                          ฿{parseFloat(order.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
                         <td className="px-6 py-4 text-center">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border ${
-                            isCanceled 
-                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' 
-                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${isCanceled ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border shadow-sm ${
+                              isCanceled
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-rose-500/10'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-emerald-500/10'
+                            }`}
+                          >
+                            {isCanceled ? (
+                              <AlertCircle className="w-3 h-3" />
+                            ) : (
+                              <CheckCircle2 className="w-3 h-3" />
+                            )}
                             {(order.status || '').replace(/[🔴🟢]/g, '').trim() || 'สำเร็จ'}
                           </span>
                         </td>
@@ -889,11 +933,8 @@ export default function BeverageDashboard() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-6 py-16 text-center text-slate-500">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <AlertCircle size={32} className="text-slate-600" />
-                        <span className="text-slate-400 text-sm font-medium">ไม่พบรายการสั่งซื้อตามเงื่อนไขที่คุณเลือก</span>
-                      </div>
+                    <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
+                      ไม่พบข้อมูลรายการออเดอร์ตามเงื่อนไขที่เลือก
                     </td>
                   </tr>
                 )}
@@ -907,35 +948,55 @@ export default function BeverageDashboard() {
   );
 }
 
-// Sub-component: Luxury Executive KPI Card
-function LuxuryKpiCard({ title, value, icon, subtitle, highlight }) {
+// KPI CARD COMPONENT WITH AMBIENT GLOW
+function KpiCard({ title, value, icon, glow, gradient, badge }) {
   return (
-    <div className={`p-6 rounded-3xl border transition-all duration-300 hover:-translate-y-1 relative overflow-hidden group shadow-xl ${
-      highlight 
-        ? 'bg-gradient-to-br from-indigo-900/40 via-purple-900/20 to-slate-900/80 border-indigo-500/40 shadow-indigo-500/10' 
-        : 'bg-slate-900/60 backdrop-blur-xl border-slate-800/80 hover:border-slate-700/80'
-    }`}>
-      {highlight && (
-        <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all" />
-      )}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</span>
-        <div className={`p-3 rounded-2xl border ${
-          highlight 
-            ? 'bg-amber-500/10 border-amber-500/20' 
-            : 'bg-slate-950/80 border-slate-800'
-        }`}>
+    <div className="relative group overflow-hidden bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 hover:border-slate-700/80 transition-all duration-300 shadow-xl">
+      {/* Background Ambient Glow */}
+      <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full blur-2xl opacity-15 transition-opacity group-hover:opacity-30 ${glow}`} />
+      
+      <div className="flex justify-between items-start relative z-10">
+        <div>
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 bg-slate-950/60 px-2 py-0.5 rounded-md border border-slate-800">
+            {badge}
+          </span>
+          <p className="text-xs font-medium text-slate-400 mt-3 mb-1">{title}</p>
+          <h3 className="text-2xl font-black tracking-tight text-white font-mono">
+            {value}
+          </h3>
+        </div>
+        <div className={`p-3 rounded-2xl bg-gradient-to-br ${gradient} border border-white/10 shadow-lg`}>
           {icon}
         </div>
-      </div>
-      <div className="mt-4">
-        <h3 className="text-2xl font-extrabold text-white tracking-tight">{value}</h3>
-        {subtitle && (
-          <p className="text-xs text-slate-400 mt-1 font-medium">
-            {subtitle}
-          </p>
-        )}
       </div>
     </div>
   );
 }
+
+// CUSTOM TOOLTIP FOR AREA CHART
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 p-3 rounded-2xl shadow-2xl font-mono">
+        <p className="text-[11px] text-slate-400 mb-1">{label}</p>
+        <p className="text-sm font-bold text-indigo-400">
+          ฿{Number(payload[0].value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
+// CUSTOM TOOLTIP FOR PIE CHART
+const CustomPieTooltip = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 px-3 py-2 rounded-xl shadow-2xl text-xs">
+        <p className="font-semibold text-white">{payload[0].name}</p>
+        <p className="text-slate-400 font-mono mt-0.5">{payload[0].value} บิล</p>
+      </div>
+    );
+  }
+  return null;
+};
