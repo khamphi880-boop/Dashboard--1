@@ -46,7 +46,7 @@ const monthNamesThai = [
   'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
 ];
 
-// 🧠 Bulletproof Universal Date & Time Parser
+// 🧠 1. Smart Universal Date Parser (แก้สลับเดือน/ปี/วัน + แปลง UTC+7 เวลาไทย)
 const parseDateTime = (datetimeString) => {
   if (!datetimeString) return null;
   let str = String(datetimeString).trim();
@@ -54,7 +54,7 @@ const parseDateTime = (datetimeString) => {
 
   let year = 0, month = 0, day = 0, hour = 0, minute = 0;
 
-  // 1. ISO string with 'T' (e.g. 2026-08-05T10:30:00.000Z)
+  // 1.1 แปลงเวลา ISO (ที่มี T หรือ Z) ให้ตรงกับ Local Timezone ไทย (UTC+7)
   if (str.includes('T')) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
@@ -68,7 +68,7 @@ const parseDateTime = (datetimeString) => {
     }
   }
 
-  // 2. Separate date and time parts
+  // 1.2 แยกวันที่ และ เวลา
   const parts = str.split(/\s+/);
   const dateStr = parts[0];
   const timeStr = parts[1] || '';
@@ -79,33 +79,38 @@ const parseDateTime = (datetimeString) => {
     minute = parseInt(tParts[1], 10) || 0;
   }
 
-  if (dateStr.includes('-')) {
-    const dParts = dateStr.split('-');
-    if (dParts.length >= 3) {
-      if (dParts[0].length === 4) { // YYYY-MM-DD
-        year = parseInt(dParts[0], 10);
-        month = parseInt(dParts[1], 10);
-        day = parseInt(dParts[2], 10);
-      } else { // DD-MM-YYYY
-        day = parseInt(dParts[0], 10);
-        month = parseInt(dParts[1], 10);
-        year = parseInt(dParts[2], 10);
+  // 1.3 Smart Detection แยกแยะ Year, Month, Day ป้องกันการสลับตำแหน่ง
+  const dParts = dateStr.split(/[-/.]/);
+  if (dParts.length >= 3) {
+    const p0 = parseInt(dParts[0], 10);
+    const p1 = parseInt(dParts[1], 10);
+    const p2 = parseInt(dParts[2], 10);
+
+    if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
+      // รูปแบบ YYYY-MM-DD หรือ YYYY/MM/DD (ปีอยู่หน้าสุด p0)
+      if (p0 > 31 || dParts[0].length === 4) {
+        year = p0;
+        if (p1 > 12) { month = p2; day = p1; }
+        else { month = p1; day = p2; } // p2 คือวัน (parts[2]) ถูกต้อง 100%
+      } 
+      // รูปแบบ DD/MM/YYYY หรือ DD-MM-2569 (ปีอยู่หลังสุด p2)
+      else if (p2 > 31 || dParts[2].length === 4) {
+        year = p2;
+        if (p0 > 12) { day = p0; month = p1; }
+        else if (p1 > 12) { month = p0; day = p1; }
+        else { day = p0; month = p1; } // มาตรฐาน DD/MM/YYYY สำหรับไทย
+      } 
+      // รูปแบบปี 2 หลักย่อ (เช่น 02/08/26 หรือ 02/08/69)
+      else {
+        day = p0;
+        month = p1;
+        year = p2 < 50 ? 2000 + p2 : 2400 + p2;
       }
     }
-  } else if (dateStr.includes('/')) {
-    const dParts = dateStr.split('/');
-    if (dParts.length >= 3) {
-      if (dParts[0].length === 4) { // YYYY/MM/DD
-        year = parseInt(dParts[0], 10);
-        month = parseInt(dParts[1], 10);
-        day = parseInt(dParts[2], 10);
-      } else { // DD/MM/YYYY or D/M/YYYY
-        day = parseInt(dParts[0], 10);
-        month = parseInt(dParts[1], 10);
-        year = parseInt(dParts[2], 10);
-      }
-    }
-  } else {
+  }
+
+  // Fallback แปลงผ่าน Date Object หากกรณีเป็นข้อความเวลาอื่นๆ
+  if (!year || !month || !day) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
       year = d.getFullYear();
@@ -120,6 +125,7 @@ const parseDateTime = (datetimeString) => {
     return null;
   }
 
+  // แปลง พ.ศ. (ปี > 2400) ให้เป็น ค.ศ. สำหรับใช้ประมวลผลภายใน
   if (year > 2400) year -= 543;
 
   return buildParsedResult(year, month, day, hour, minute);
@@ -133,7 +139,7 @@ const buildParsedResult = (year, month, day, hour, minute) => {
   const min = String(minute).padStart(2, '0');
 
   return {
-    isoDate: `${yyyy}-${mm}-${dd}`,                             // "2026-08-05" (Standard comparison)
+    isoDate: `${yyyy}-${mm}-${dd}`,                             // "2026-08-02"
     isoMonth: `${yyyy}-${mm}`,                                  // "2026-08"
     hourStr: `${hh}:00`,                                        // "10:00"
     timeStr: `${hh}:${min}`,                                    // "10:30"
@@ -143,8 +149,8 @@ const buildParsedResult = (year, month, day, hour, minute) => {
     hour,
     yearBE: year + 543,
     shortYearBE: String(year + 543).slice(-2),
-    displayShortBE: `${parseInt(dd, 10)} ${monthNamesThai[month]} ${String(year + 543).slice(-2)}`, // "5 ส.ค. 69"
-    displayDayMonth: `${parseInt(dd, 10)} ${monthNamesThai[month]}`,                                // "5 ส.ค."
+    displayShortBE: `${parseInt(dd, 10)} ${monthNamesThai[month]} ${String(year + 543).slice(-2)}`, // "2 ส.ค. 69"
+    displayDayMonth: `${parseInt(dd, 10)} ${monthNamesThai[month]}`,                                // "2 ส.ค."
     displayMonthBE: `${monthNamesThai[month]} ${String(year + 543).slice(-2)}`                      // "ส.ค. 69"
   };
 };
@@ -311,6 +317,7 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
+  // 🧠 2. ระบบ Smart Fallback คำนวณยอดวันล่าสุดอัตโนมัติ
   const todayMetrics = useMemo(() => {
     const now = new Date();
     const yCE = now.getFullYear();
@@ -335,6 +342,7 @@ export default function BeverageDashboard() {
     let isFallbackToLatest = false;
     let todayOrders = getOrdersForIsoDate(todayIso);
 
+    // หากวันนี้มี 0 ออเดอร์ สลับไปใช้วันล่าสุดที่มีข้อมูลใน Google Sheet อัตโนมัติ
     if (todayOrders.length === 0 && latestAvailableDate) {
       targetIso = latestAvailableDate;
       todayOrders = getOrdersForIsoDate(latestAvailableDate);
@@ -426,7 +434,6 @@ export default function BeverageDashboard() {
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
-  // 📈 100% Chronological & Accurate Chart Generator
   const chartsData = useMemo(() => {
     const paymentMap = {};
     displayData.forEach((item) => {
@@ -449,19 +456,15 @@ export default function BeverageDashboard() {
       let displayKey = '';
 
       if (filterMode === 'day' && selectedDate) {
-        // 🕒 รายชั่วโมง (เรียงจาก 00:00 -> 23:00)
         sortKey = String(parsed.hour).padStart(2, '0');
         displayKey = parsed.hourStr;
       } else if (filterMode === 'year' && selectedYear) {
-        // 🗓️ รายเดือน (เรียงจาก YYYY-01 -> YYYY-12)
         sortKey = parsed.isoMonth;
         displayKey = parsed.displayMonthBE;
       } else if (filterMode === 'month' && selectedMonth) {
-        // 📅 รายวันในเดือน (เรียงจาก YYYY-MM-01 -> YYYY-MM-31)
         sortKey = parsed.isoDate;
         displayKey = parsed.displayDayMonth;
       } else {
-        // 📆 รายวันทั่วไป (แสดงปีพ.ศ.กำกับ ป้องกันวันซ้ำข้ามปี)
         sortKey = parsed.isoDate;
         displayKey = parsed.displayShortBE;
       }
@@ -472,7 +475,6 @@ export default function BeverageDashboard() {
       trendMap[sortKey].sales += parseFloat(item.total) || 0;
     });
 
-    // ✨ จัดเรียงคีย์ ISO ลำดับเวลาจากอดีตไปปัจจุบัน 100%
     const trendData = Object.keys(trendMap)
       .sort()
       .map((key) => trendMap[key]);
@@ -650,13 +652,18 @@ export default function BeverageDashboard() {
 
         {/* METRICS GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+          {/* 🌟 การ์ดแสดงผลยอดขายวันล่าสุดพร้อม Badge วันที่แบบอัตโนมัติ */}
           <KpiCard
-            title={todayMetrics.isFallbackToLatest ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})` : "ยอดขายวันนี้ (Today)"}
+            title={
+              todayMetrics.isFallbackToLatest
+                ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})`
+                : "ยอดขายวันนี้ (Today)"
+            }
             value={`฿${todayMetrics.todaySales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             icon={<Sun className="w-6 h-6 text-amber-400" />}
             glow="bg-amber-500"
             gradient="from-amber-500/20 to-orange-500/10"
-            badge="Daily"
+            badge={todayMetrics.isFallbackToLatest ? "Latest" : "Today"}
           />
           <KpiCard
             title="ยอดขายรวม (Total Revenue)"
