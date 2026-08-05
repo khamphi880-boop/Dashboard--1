@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell
 } from 'recharts';
-import { ShoppingCart, DollarSign, TrendingUp, Package, AlertCircle, MapPin, CreditCard, CheckCircle2, Calendar, Sun } from 'lucide-react';
+import { 
+  ShoppingCart, DollarSign, TrendingUp, Package, AlertCircle, 
+  MapPin, CreditCard, CheckCircle2, Calendar, Sun, Search, 
+  Sparkles, RefreshCw, Filter, Layers, ArrowUpRight, X
+} from 'lucide-react';
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 const PAYMENT_COLORS = {
   "ไทยช่วยไทยพลัส": "#10b981",
-  "โอนพร้อมเพย์": "#3b82f6",
+  "โอนพร้อมเพย์": "#6366f1",
   "เงินสด": "#f59e0b"
 };
 
@@ -31,13 +35,11 @@ const normalizeOrder = (raw) => {
   };
 };
 
-// [MODIFIED] Universal date parser bug fix for YYYY-MM-DD and timezone strings
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
-    // If ISO timestamp with timezone (T or Z), convert via Date object to local timezone
     if (str.includes('T')) {
       const d = new Date(str);
       if (!isNaN(d.getTime())) {
@@ -51,7 +53,6 @@ const formatDateForComparison = (datetimeString) => {
 
     const dateOnly = str.split(' ')[0].trim();
 
-    // DD/MM/YYYY or DD/MM/2569
     if (dateOnly.includes('/')) {
       const parts = dateOnly.split('/');
       if (parts.length >= 3) {
@@ -68,18 +69,16 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
-    // YYYY-MM-DD or DD-MM-YYYY
     if (dateOnly.includes('-')) {
       const parts = dateOnly.split('-');
       if (parts.length >= 3) {
-        if (parts[0].length === 4) { // YYYY-MM-DD
+        if (parts[0].length === 4) {
           let year = parseInt(parts[0], 10);
           if (year > 2400) year -= 543;
           const month = String(parseInt(parts[1], 10)).padStart(2, '0');
-          // [MODIFIED] Fixed typo: parts[2] is day, not parts[0]
           const day = String(parseInt(parts[2], 10)).padStart(2, '0'); 
           return `${year}-${month}-${day}`;
-        } else { // DD-MM-YYYY
+        } else {
           let year = parseInt(parts[2], 10);
           if (year > 2400) year -= 543;
           const month = String(parseInt(parts[1], 10)).padStart(2, '0');
@@ -104,7 +103,6 @@ const formatDateForComparison = (datetimeString) => {
   }
 };
 
-// Helper function to convert any date/time string to Thai B.E. (พ.ศ.) format for UI display
 const formatDateToBE = (datetimeString) => {
   if (!datetimeString) return '-';
   try {
@@ -149,7 +147,6 @@ const formatDateToBE = (datetimeString) => {
       return datetimeString;
     }
 
-    // Convert A.D. (ค.ศ.) to B.E. (พ.ศ.) if year < 2400
     if (year < 2400) {
       year += 543;
     }
@@ -162,6 +159,21 @@ const formatDateToBE = (datetimeString) => {
   } catch (e) {
     return datetimeString;
   }
+};
+
+// Custom Glassmorphic Tooltip for Recharts
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-900/90 backdrop-blur-md text-white border border-slate-700/50 p-3.5 rounded-xl shadow-2xl space-y-1">
+        <p className="text-xs text-slate-400 font-medium">{label}</p>
+        <p className="text-base font-bold text-indigo-400">
+          ฿{Number(payload[0].value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </p>
+      </div>
+    );
+  }
+  return null;
 };
 
 export default function BeverageDashboard() {
@@ -180,75 +192,74 @@ export default function BeverageDashboard() {
 
   const DATA_URL = "https://script.google.com/macros/s/AKfycbzcNRoFsQ2gkzcLQ21qQdYx1VR8S0m1xMj3hN2TJFkp2Dx2e7wrVc9MInQtssJEgeL0/exec";
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(DATA_URL);
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error("404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy ไปแล้ว");
-          }
-          throw new Error(`HTTP error! status: ${response.status}`);
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(DATA_URL);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy ไปแล้ว");
         }
-        const result = await response.json();
-        
-        let parsedData = [];
-        if (Array.isArray(result)) {
-           parsedData = result;
-        } else if (result && result.data && Array.isArray(result.data)) {
-           parsedData = result.data;
-        }
-
-        if (parsedData.length > 0) {
-          if (Array.isArray(parsedData[0])) {
-             const headers = parsedData[0];
-             const mappedData = parsedData.slice(1).map(row => {
-                const obj = {};
-                headers.forEach((header, index) => {
-                   const cleanHeader = String(header || '').trim();
-                   if (cleanHeader.includes('วัน-เวลา') || cleanHeader.includes('เวลา')) obj.datetime = row[index];
-                   else if (cleanHeader.includes('รหัสบิล') || cleanHeader.includes('บิล')) obj.billId = row[index];
-                   else if (cleanHeader.includes('ชื่อลูกค้า') || cleanHeader.includes('ลูกค้า')) obj.customer = row[index];
-                   else if (cleanHeader.includes('รายการ')) obj.items = row[index];
-                   else if (cleanHeader.includes('ยอดรวม')) obj.total = parseFloat(row[index]) || 0;
-                   else if (cleanHeader.includes('ช่องทางชำระ') || cleanHeader.includes('ชำระ')) obj.payment = row[index];
-                   else if (cleanHeader.includes('สถานะ')) obj.status = row[index];
-                   else if (cleanHeader.includes('จุดจัดส่ง')) obj.deliveryPoint = row[index];
-                   else if (cleanHeader.includes('ที่อยู่')) obj.address = row[index];
-                   else if (cleanHeader.includes('หมายเหตุ')) obj.remark = row[index];
-                   else obj[cleanHeader] = row[index];
-                });
-                return normalizeOrder(obj);
-             });
-             setData(mappedData);
-             setIsLive(true); 
-          } else {
-            const normalizedData = parsedData.map(normalizeOrder);
-            setData(normalizedData);
-            setIsLive(true); 
-          }
-        } else {
-           console.warn("API returned empty data.");
-           setData([]); 
-           setIsLive(false); 
-           setError("ไม่พบข้อมูลจากระบบ (Empty Data)");
-        }
-      } catch (err) {
-        console.error("Error fetching data:", err);
-        setData([]); 
-        setIsLive(false); 
-        setError(err.message || "ไม่สามารถดึงข้อมูลได้ (Connection Error)");
-      } finally {
-        setLoading(false);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    };
+      const result = await response.json();
+      
+      let parsedData = [];
+      if (Array.isArray(result)) {
+         parsedData = result;
+      } else if (result && result.data && Array.isArray(result.data)) {
+         parsedData = result.data;
+      }
 
+      if (parsedData.length > 0) {
+        if (Array.isArray(parsedData[0])) {
+           const headers = parsedData[0];
+           const mappedData = parsedData.slice(1).map(row => {
+              const obj = {};
+              headers.forEach((header, index) => {
+                 const cleanHeader = String(header || '').trim();
+                 if (cleanHeader.includes('วัน-เวลา') || cleanHeader.includes('เวลา')) obj.datetime = row[index];
+                 else if (cleanHeader.includes('รหัสบิล') || cleanHeader.includes('บิล')) obj.billId = row[index];
+                 else if (cleanHeader.includes('ชื่อลูกค้า') || cleanHeader.includes('ลูกค้า')) obj.customer = row[index];
+                 else if (cleanHeader.includes('รายการ')) obj.items = row[index];
+                 else if (cleanHeader.includes('ยอดรวม')) obj.total = parseFloat(row[index]) || 0;
+                 else if (cleanHeader.includes('ช่องทางชำระ') || cleanHeader.includes('ชำระ')) obj.payment = row[index];
+                 else if (cleanHeader.includes('สถานะ')) obj.status = row[index];
+                 else if (cleanHeader.includes('จุดจัดส่ง')) obj.deliveryPoint = row[index];
+                 else if (cleanHeader.includes('ที่อยู่')) obj.address = row[index];
+                 else if (cleanHeader.includes('หมายเหตุ')) obj.remark = row[index];
+                 else obj[cleanHeader] = row[index];
+              });
+              return normalizeOrder(obj);
+           });
+           setData(mappedData);
+           setIsLive(true); 
+        } else {
+          const normalizedData = parsedData.map(normalizeOrder);
+          setData(normalizedData);
+          setIsLive(true); 
+        }
+      } else {
+         setData([]); 
+         setIsLive(false); 
+         setError("ไม่พบข้อมูลจากระบบ (Empty Data)");
+      }
+    } catch (err) {
+      console.error("Error fetching data:", err);
+      setData([]); 
+      setIsLive(false); 
+      setError(err.message || "ไม่สามารถดึงข้อมูลได้ (Connection Error)");
+    } font-sans
+    finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, []);
 
-  // [MODIFIED] Auto-detect and set selectedYear to the latest year available in data
   useEffect(() => {
     if (data.length > 0 && !selectedYear) {
       const years = data
@@ -281,7 +292,6 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // Today's metrics calculation with automatic fallback to latest available date
   const todayMetrics = useMemo(() => {
     const now = new Date();
     const yCE = now.getFullYear();
@@ -306,7 +316,6 @@ export default function BeverageDashboard() {
     let isFallbackToLatest = false;
     let todayOrders = getOrdersForIsoDate(todayIso);
 
-    // Fallback to latest date if today has 0 orders
     if (todayOrders.length === 0 && latestAvailableDate) {
       targetIso = latestAvailableDate;
       todayOrders = getOrdersForIsoDate(latestAvailableDate);
@@ -458,225 +467,283 @@ export default function BeverageDashboard() {
     return { paymentData, trendData };
   }, [displayData, filterMode, selectedDate, selectedYear]);
 
-  let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Sales Trend)";
-  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
-  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (Monthly Sales Trend) ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
+  let chartTitle = "แนวโน้มยอดขายรายวัน (Daily Revenue)";
+  if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง (วันที่ ${formatDateToBE(selectedDate)})`;
+  if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})`;
 
   const currentYearBE = selectedYear ? parseInt(selectedYear) + 543 : '';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[#0b0f19] text-slate-100 p-4 sm:p-6 md:p-10 font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Dynamic Background Effects */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+        <div className="absolute -top-[10%] -left-[10%] w-[45%] h-[45%] rounded-full bg-indigo-600/10 blur-[120px]" />
+        <div className="absolute top-[30%] -right-[10%] w-[40%] h-[40%] rounded-full bg-emerald-600/10 blur-[140px]" />
+      </div>
+
+      <div className="max-w-[1550px] mx-auto space-y-8">
         
-        {/* Header Section */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <span className="text-3xl">🥤</span> Beverage Shop Dashboard {currentYearBE ? `(พ.ศ. ${currentYearBE})` : ''}
-            </h1>
-            <div className="flex items-center gap-3 mt-2">
-              <p className="text-slate-500 text-sm">ภาพรวมยอดขายและรายการสั่งซื้อ Real-time {currentYearBE ? `ประจำปี พ.ศ. ${currentYearBE}` : ''}</p>
-              
-              {loading ? (
-                <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
-                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Syncing...
+        {/* Top Navigation / Executive Bar */}
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-[1px] shadow-lg shadow-indigo-500/20">
+              <div className="w-full h-full bg-slate-950 rounded-2xl flex items-center justify-center text-2xl">
+                🥤
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2">
+                  Beverage Analytics
+                </h1>
+                <span className="bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs px-2.5 py-0.5 rounded-full font-semibold tracking-wide uppercase">
+                  Enterprise
                 </span>
-              ) : error ? (
-                <span className="text-xs px-2 py-1 rounded-full border bg-red-50 text-red-600 border-red-200">
-                  🔴 {error}
-                </span>
-              ) : (
-                <span className={`text-xs px-2 py-1 rounded-full border ${isLive ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                  {isLive ? '🟢 Live Data' : '⚪ Waiting for Data'}
-                </span>
-              )}
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-slate-400 text-sm">
+                <span>สรุปยอดขาย Real-time {currentYearBE ? `(ปี พ.ศ. ${currentYearBE})` : ''}</span>
+                <span className="text-slate-700">•</span>
+                
+                {loading ? (
+                  <span className="flex items-center gap-1.5 text-xs text-amber-400 font-medium">
+                    <RefreshCw size={13} className="animate-spin" /> Syncing...
+                  </span>
+                ) : error ? (
+                  <span className="flex items-center gap-1.5 text-xs text-rose-400 font-medium">
+                    <AlertCircle size={13} /> Connection Error
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2 text-xs text-emerald-400 font-medium">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    Live Data Active
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
-            <div className="flex bg-slate-100 p-1 rounded-lg text-sm w-full sm:w-auto">
-              <button
-                  onClick={() => setFilterMode('day')}
-                  className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${filterMode === 'day' ? 'bg-white text-indigo-600 shadow-sm font-medium' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                  วัน
-              </button>
-              <button
-                  onClick={() => setFilterMode('month')}
-                  className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${filterMode === 'month' ? 'bg-white text-indigo-600 shadow-sm font-medium' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                  เดือน
-              </button>
-              <button
-                  onClick={() => setFilterMode('year')}
-                  className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${filterMode === 'year' ? 'bg-white text-indigo-600 shadow-sm font-medium' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                  ปี
-              </button>
+          {/* Controls & Filter Bar */}
+          <div className="flex flex-wrap items-center gap-3">
+            
+            {/* Filter Mode Selector */}
+            <div className="bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800 flex items-center shadow-inner">
+              {['day', 'month', 'year'].map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setFilterMode(mode)}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all duration-300 ${
+                    filterMode === mode
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {mode === 'day' ? 'รายวัน' : mode === 'month' ? 'รายเดือน' : 'รายปี'}
+                </button>
+              ))}
             </div>
 
-            <div className="relative w-full sm:w-auto min-w-[160px]">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-                    <Calendar size={18} />
-                </div>
-                
-                {filterMode === 'day' && (
-                  <input 
-                      type="date" 
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
-                  />
-                )}
+            {/* Date Selector Input */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                <Calendar size={16} />
+              </div>
 
-                {filterMode === 'month' && (
-                  <input 
-                      type="month" 
-                      value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
-                  />
-                )}
+              {filterMode === 'day' && (
+                <input 
+                  type="date" 
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block w-full pl-10 pr-9 py-2.5 shadow-sm transition-all focus:outline-none"
+                />
+              )}
 
-                {filterMode === 'year' && (
-                  <select 
-                      value={selectedYear}
-                      onChange={(e) => setSelectedYear(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all appearance-none cursor-pointer font-medium"
-                  >
-                      <option value="">เลือกปี (ทุกปี)</option>
-                      {availableYears.map(year => (
-                          <option key={year} value={year}>พ.ศ. {parseInt(year) + 543}</option>
-                      ))}
-                  </select>
-                )}
+              {filterMode === 'month' && (
+                <input 
+                  type="month" 
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block w-full pl-10 pr-9 py-2.5 shadow-sm transition-all focus:outline-none"
+                />
+              )}
 
-                {((filterMode === 'day' && selectedDate) || 
-                  (filterMode === 'month' && selectedMonth) || 
-                  (filterMode === 'year' && selectedYear)) && (
-                  <button 
-                    onClick={() => {
-                        if(filterMode === 'day') setSelectedDate('');
-                        if(filterMode === 'month') setSelectedMonth('');
-                        if(filterMode === 'year') setSelectedYear('');
-                    }}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
-                    title="Clear filter"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                  </button>
-                )}
+              {filterMode === 'year' && (
+                <select 
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent block w-full pl-10 pr-9 py-2.5 shadow-sm transition-all appearance-none cursor-pointer font-medium focus:outline-none min-w-[140px]"
+                >
+                  <option value="">เลือกปี (ทั้งหมด)</option>
+                  {availableYears.map(year => (
+                    <option key={year} value={year} className="bg-slate-900 text-white">
+                      พ.ศ. {parseInt(year) + 543}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {((filterMode === 'day' && selectedDate) || 
+                (filterMode === 'month' && selectedMonth) || 
+                (filterMode === 'year' && selectedYear)) && (
+                <button 
+                  onClick={() => {
+                    if(filterMode === 'day') setSelectedDate('');
+                    if(filterMode === 'month') setSelectedMonth('');
+                    if(filterMode === 'year') setSelectedYear('');
+                  }}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer bg-white px-3 py-2.5 rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors">
+            {/* Hide Canceled Toggle */}
+            <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer bg-slate-950/80 px-4 py-2.5 rounded-2xl border border-slate-800 shadow-sm hover:border-slate-700 transition-all select-none">
               <input 
                 type="checkbox" 
                 checked={hideCanceled} 
                 onChange={(e) => setHideCanceled(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950 w-4 h-4 cursor-pointer"
               />
-              ซ่อนรายการยกเลิก
+              ซ่อนออเดอร์ยกเลิก
             </label>
+
+            {/* Sync Button */}
+            <button 
+              onClick={fetchData}
+              className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-2xl text-slate-400 hover:text-white hover:border-slate-700 transition-all shadow-sm"
+              title="รีเฟรชข้อมูล"
+            >
+              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            </button>
           </div>
         </header>
 
+        {/* System Notification Banner */}
         {data.length > 0 && displayData.length === 0 && filterMode === 'day' && selectedDate && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm shadow-sm">
-            <div className="flex items-center gap-2">
-              <AlertCircle size={20} className="text-amber-600 shrink-0" />
+          <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent border border-amber-500/20 rounded-2xl p-4 text-amber-300 flex items-center justify-between text-xs shadow-lg backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <AlertCircle size={18} className="text-amber-400 shrink-0" />
               <span>
-                ยังไม่มีข้อมูลรายการออเดอร์ในวันที่ <strong>{formatDateToBE(selectedDate)}</strong>
+                ไม่พบข้อมูลในวันที่ <strong className="text-amber-200">{formatDateToBE(selectedDate)}</strong>
                 {latestAvailableDate && (
-                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong>{formatDateToBE(latestAvailableDate)}</strong>)</>
+                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong className="text-amber-200">{formatDateToBE(latestAvailableDate)}</strong>)</>
                 )}
               </span>
             </div>
             {latestAvailableDate && (
               <button 
                 onClick={() => setSelectedDate(latestAvailableDate)}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-sm"
+                className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-medium px-3.5 py-1.5 rounded-xl border border-amber-500/30 transition-all shrink-0 flex items-center gap-1.5"
               >
-                ดูวันที่ล่าสุด ({formatDateToBE(latestAvailableDate)})
+                สลับไปวันที่ล่าสุด <ArrowUpRight size={14} />
               </button>
             )}
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Key Metrics Cards (Executive KPIs) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
           
-          {/* Today's / Latest Day Sales Card */}
-          <KpiCard 
+          <LuxuryKpiCard 
             title={todayMetrics.isFallbackToLatest ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})` : "ยอดขายวันนี้ (Today)"} 
-            value={`฿${todayMetrics.todaySales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
-            icon={<Sun size={24} className="text-amber-500" />}
-            trend={`${todayMetrics.todayCount} ออเดอร์ ${todayMetrics.isFallbackToLatest ? '(วันล่าสุดที่มีข้อมูล)' : '(วันนี้)'}`}
+            value={`฿${todayMetrics.todaySales.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
+            icon={<Sun size={22} className="text-amber-400" />}
+            subtitle={`${todayMetrics.todayCount} รายการสั่งซื้อ`}
             highlight={true}
           />
 
-          {/* Total Sales */}
-          <KpiCard 
-            title="ยอดขายรวม (Total)" 
-            value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
-            icon={<DollarSign size={24} className="text-emerald-500" />}
-            trend={filterMode === 'year' && selectedYear ? `ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}` : selectedDate ? `วันที่ ${formatDateToBE(selectedDate)}` : "ยอดรวมทั้งหมด"}
+          <LuxuryKpiCard 
+            title="ยอดขายรวม (Total Revenue)" 
+            value={`฿${metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
+            icon={<DollarSign size={22} className="text-emerald-400" />}
+            subtitle={filterMode === 'year' && selectedYear ? `ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}` : selectedDate ? `วันที่ ${formatDateToBE(selectedDate)}` : "ช่วงเวลาที่เลือกทั้งหมด"}
           />
 
-          {/* Total Orders */}
-          <KpiCard 
+          <LuxuryKpiCard 
             title="ออเดอร์ทั้งหมด (Orders)" 
-            value={metrics.totalOrders} 
-            icon={<ShoppingCart size={24} className="text-blue-500" />}
+            value={metrics.totalOrders.toLocaleString()} 
+            icon={<ShoppingCart size={22} className="text-indigo-400" />}
+            subtitle="รายการบิลสำเร็จ"
           />
 
-          {/* Total Items */}
-          <KpiCard 
-            title="จำนวนสินค้า (Items)" 
-            value={metrics.totalItems} 
-            icon={<Package size={24} className="text-purple-500" />}
+          <LuxuryKpiCard 
+            title="จำนวนแก้ว/สินค้า (Items)" 
+            value={metrics.totalItems.toLocaleString()} 
+            icon={<Package size={22} className="text-purple-400" />}
+            subtitle="จำนวนชิ้นทั้งหมด"
           />
 
-          {/* Avg Order */}
-          <KpiCard 
-            title="ยอดเฉลี่ย/บิล (Avg.)" 
+          <LuxuryKpiCard 
+            title="ยอดเฉลี่ย/บิล (Avg. Bill)" 
             value={`฿${metrics.avgOrderValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
-            icon={<TrendingUp size={24} className="text-teal-500" />}
+            icon={<TrendingUp size={22} className="text-cyan-400" />}
+            subtitle="Average Order Value"
           />
         </div>
 
+        {/* Analytics Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
-            <h2 className="text-lg font-semibold mb-4 text-slate-800">{chartTitle}</h2>
-            <div className="h-[300px] w-full">
+          
+          {/* Main Area Chart (Sales Trend) */}
+          <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl lg:col-span-2 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                  <Sparkles size={18} className="text-indigo-400" />
+                  {chartTitle}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">กราฟแสดงการเติบโตและสถิติตามช่วงเวลา</p>
+              </div>
+            </div>
+
+            <div className="h-[320px] w-full">
               {chartsData.trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartsData.trendData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(value) => `฿${value}`} />
-                    <RechartsTooltip 
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      formatter={(value) => [`฿${value}`, 'Sales']}
+                  <AreaChart data={chartsData.trendData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} tickFormatter={(val) => `฿${val}`} />
+                    <RechartsTooltip content={<CustomTooltip />} />
+                    <Area 
+                      type="monotone" 
+                      dataKey="sales" 
+                      stroke="#818cf8" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill="url(#colorSales)" 
+                      activeDot={{ r: 6, fill: '#818cf8', stroke: '#fff', strokeWidth: 2 }} 
                     />
-                    <Line type="monotone" dataKey="sales" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: 'white'}} activeDot={{ r: 8 }} />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-400">
-                  ไม่มีข้อมูลสำหรับแสดงผลกราฟ
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-2">
+                  <Layers size={32} strokeWidth={1.5} />
+                  <span className="text-xs">ไม่มีข้อมูลกราฟในช่วงเวลานี้</span>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <h2 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2">
-              <CreditCard size={18} className="text-slate-400" /> ช่องทางชำระเงิน
-            </h2>
-            <div className="h-[250px] w-full">
+          {/* Payment Method Pie Chart */}
+          <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl flex flex-col justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-white flex items-center gap-2 mb-1">
+                <CreditCard size={18} className="text-emerald-400" /> สัดส่วนการชำระเงิน
+              </h2>
+              <p className="text-xs text-slate-400">แยกตามประเภท Payment Channels</p>
+            </div>
+
+            <div className="h-[250px] w-full relative flex items-center justify-center my-4">
               {chartsData.paymentData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -684,128 +751,149 @@ export default function BeverageDashboard() {
                       data={chartsData.paymentData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={90}
-                      paddingAngle={5}
+                      innerRadius={65}
+                      outerRadius={95}
+                      paddingAngle={6}
                       dataKey="value"
+                      stroke="none"
                     >
                       {chartsData.paymentData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={PAYMENT_COLORS[entry.name] || COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <RechartsTooltip 
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    <RechartsTooltip content={<CustomTooltip />} />
+                    <Legend 
+                      verticalAlign="bottom" 
+                      height={36} 
+                      iconType="circle"
+                      formatter={(value) => <span className="text-xs text-slate-300 font-medium">{value}</span>}
                     />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-400">
-                  ไม่มีข้อมูล
+                <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
+                  ไม่มีข้อมูลสัดส่วน
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <h2 className="text-lg font-semibold text-slate-800">
-              รายการออเดอร์ {selectedYear ? `(ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})` : ''}
-            </h2>
-            <div className="relative w-full sm:w-64">
+        {/* Executive Data Table Section */}
+        <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden">
+          
+          {/* Table Header Controls */}
+          <div className="p-6 border-b border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-white tracking-tight">
+                รายการสั่งซื้อทั้งหมด
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {selectedYear ? `ข้อมูลประจำปี พ.ศ. ${parseInt(selectedYear) + 543}` : 'แสดงข้อมูลรายการบิลย้อนหลัง'}
+              </p>
+            </div>
+
+            <div className="relative w-full sm:w-72">
               <input 
                 type="text" 
-                placeholder="ค้นหาชื่อ, รหัสบิล, ที่อยู่..." 
-                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                placeholder="ค้นหาชื่อลูกค้า, รหัสบิล, ที่อยู่..." 
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-2xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 disabled={data.length === 0}
               />
-              <svg className="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              <Search size={16} className="text-slate-500 absolute left-3.5 top-3" />
             </div>
           </div>
           
+          {/* Main Table */}
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="text-xs text-slate-500 uppercase bg-slate-50/50 border-b border-slate-100">
+            <table className="w-full text-xs text-left text-slate-300">
+              <thead className="bg-slate-950/60 uppercase text-[11px] font-semibold text-slate-400 border-b border-slate-800/80 tracking-wider">
                 <tr>
-                  <th scope="col" className="px-6 py-4 font-medium">วัน-เวลา</th>
-                  <th scope="col" className="px-6 py-4 font-medium">รหัสบิล (Bill ID)</th>
-                  <th scope="col" className="px-6 py-4 font-medium">ลูกค้า (Customer)</th>
-                  <th scope="col" className="px-6 py-4 font-medium">รายการ (Items)</th>
-                  <th scope="col" className="px-6 py-4 font-medium text-right">ยอดรวม (Total)</th>
-                  <th scope="col" className="px-6 py-4 font-medium text-center">สถานะ (Status)</th>
+                  <th scope="col" className="px-6 py-4">วัน-เวลา</th>
+                  <th scope="col" className="px-6 py-4">รหัสบิล</th>
+                  <th scope="col" className="px-6 py-4">ลูกค้า & ที่อยู่</th>
+                  <th scope="col" className="px-6 py-4">รายการสินค้า</th>
+                  <th scope="col" className="px-6 py-4 text-right">ยอดรวม</th>
+                  <th scope="col" className="px-6 py-4 text-center">สถานะ</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-800/50">
                 {loading && data.length === 0 ? (
-                   <tr>
-                     <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
-                       <div className="flex flex-col items-center gap-2">
-                         <svg className="animate-spin h-6 w-6 text-indigo-500" viewBox="0 0 24 24">
-                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                         </svg>
-                         กำลังโหลดข้อมูล...
-                       </div>
-                     </td>
-                   </tr>
+                  <tr>
+                    <td colSpan="6" className="px-6 py-16 text-center text-slate-500">
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <RefreshCw size={24} className="animate-spin text-indigo-500" />
+                        <span className="text-sm font-medium">กำลังประมวลผลข้อมูล Real-time...</span>
+                      </div>
+                    </td>
+                  </tr>
                 ) : displayData.length > 0 ? (
-                  displayData.map((order, index) => (
-                    <tr key={order.billId || index} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-slate-500 text-xs">
-                        {formatDateToBE(order.datetime)}
-                      </td>
-                      <td className="px-6 py-4 font-mono text-xs text-slate-500">
-                        {order.billId}
-                      </td>
-                      <td className="px-6 py-4 font-medium text-slate-700">
-                        {order.customer}
-                        <div className="text-xs text-slate-400 flex items-center gap-1 mt-1">
-                          <MapPin size={12} /> {order.address}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          {String(order.items || order['รายการสินค้า'] || '-').split(/\n/).map((item, i) => (
-                            <div key={i} className="text-slate-600 bg-slate-50 px-2 py-1 rounded text-xs border border-slate-100 w-max max-w-xs truncate" title={item}>
-                              {item}
+                  displayData.map((order, index) => {
+                    const isCanceled = (order.status || '').includes('ยกเลิก') || (order.status || '').toLowerCase().includes('cancel');
+                    const firstChar = (order.customer || 'C').charAt(0).toUpperCase();
+
+                    return (
+                      <tr key={order.billId || index} className="hover:bg-slate-800/30 transition-colors group">
+                        <td className="px-6 py-4 font-mono text-slate-400 whitespace-nowrap">
+                          {formatDateToBE(order.datetime)}
+                        </td>
+                        <td className="px-6 py-4 font-mono text-indigo-400 font-medium">
+                          #{order.billId}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs shadow-md">
+                              {firstChar}
                             </div>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 font-semibold text-slate-800 text-right">
-                        ฿{order.total}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                          (order.status || '').includes('ยกเลิก') || (order.status || '').toLowerCase().includes('cancel')
-                            ? 'bg-red-50 text-red-600 border-red-100'
-                            : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                        }`}>
-                          {((order.status || '').includes('ยกเลิก') || (order.status || '').toLowerCase().includes('cancel')) ? (
-                            <AlertCircle size={14} /> 
-                          ) : (
-                            <CheckCircle2 size={14} /> 
-                          )}
-                          {(order.status || '').replace(/[🔴🟢]/g, '').trim() || 'สำเร็จ'}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            <div>
+                              <div className="font-semibold text-slate-100 group-hover:text-indigo-300 transition-colors">
+                                {order.customer || 'ลูกค้าทั่วไป'}
+                              </div>
+                              {order.address && (
+                                <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                  <MapPin size={11} className="text-slate-500 shrink-0" /> 
+                                  <span className="truncate max-w-[200px]">{order.address}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1.5 max-w-xs">
+                            {String(order.items || order['รายการสินค้า'] || '-').split(/\n|,/).map((item, i) => (
+                              <span key={i} className="bg-slate-950/80 border border-slate-800 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-medium">
+                                {item.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className="font-bold text-sm text-emerald-400">
+                            ฿{Number(order.total).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border ${
+                            isCanceled 
+                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' 
+                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isCanceled ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                            {(order.status || '').replace(/[🔴🟢]/g, '').trim() || 'สำเร็จ'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
-                      {error ? (
-                        <div className="flex flex-col items-center gap-2 text-red-500">
-                          <AlertCircle size={32} />
-                          <p className="font-medium text-lg">เกิดข้อผิดพลาดในการเชื่อมต่อข้อมูล</p>
-                          <p className="text-sm font-semibold">{error}</p>
-                        </div>
-                      ) : (
-                        `ไม่พบข้อมูลใน พ.ศ. ${selectedYear ? parseInt(selectedYear) + 543 : ''}`
-                      )}
+                    <td colSpan="6" className="px-6 py-16 text-center text-slate-500">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <AlertCircle size={32} className="text-slate-600" />
+                        <span className="text-slate-400 text-sm font-medium">ไม่พบรายการสั่งซื้อตามเงื่อนไขที่คุณเลือก</span>
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -813,30 +901,38 @@ export default function BeverageDashboard() {
             </table>
           </div>
         </div>
-        
+
       </div>
     </div>
   );
 }
 
-function KpiCard({ title, value, icon, trend, highlight }) {
+// Sub-component: Luxury Executive KPI Card
+function LuxuryKpiCard({ title, value, icon, subtitle, highlight }) {
   return (
-    <div className={`p-5 rounded-2xl shadow-sm border transition-all ${
-      highlight ? 'bg-gradient-to-br from-amber-50 to-orange-50/50 border-amber-200/80' : 'bg-white border-slate-100'
+    <div className={`p-6 rounded-3xl border transition-all duration-300 hover:-translate-y-1 relative overflow-hidden group shadow-xl ${
+      highlight 
+        ? 'bg-gradient-to-br from-indigo-900/40 via-purple-900/20 to-slate-900/80 border-indigo-500/40 shadow-indigo-500/10' 
+        : 'bg-slate-900/60 backdrop-blur-xl border-slate-800/80 hover:border-slate-700/80'
     }`}>
+      {highlight && (
+        <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all" />
+      )}
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-slate-500">{title}</p>
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-          highlight ? 'bg-amber-100' : 'bg-slate-50'
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</span>
+        <div className={`p-3 rounded-2xl border ${
+          highlight 
+            ? 'bg-amber-500/10 border-amber-500/20' 
+            : 'bg-slate-950/80 border-slate-800'
         }`}>
           {icon}
         </div>
       </div>
-      <div className="mt-2">
-        <h3 className="text-xl font-bold text-slate-800">{value}</h3>
-        {trend && (
-          <p className="text-xs mt-1 text-slate-500 font-medium">
-            {trend}
+      <div className="mt-4">
+        <h3 className="text-2xl font-extrabold text-white tracking-tight">{value}</h3>
+        {subtitle && (
+          <p className="text-xs text-slate-400 mt-1 font-medium">
+            {subtitle}
           </p>
         )}
       </div>
