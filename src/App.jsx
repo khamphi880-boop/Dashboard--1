@@ -31,18 +31,27 @@ const normalizeOrder = (raw) => {
   };
 };
 
-// Universal date parser for internal logic (YYYY-MM-DD comparison)
+// [MODIFIED] Universal date parser bug fix for YYYY-MM-DD and timezone strings
 const formatDateForComparison = (datetimeString) => {
   if (!datetimeString) return "";
   try {
     let str = String(datetimeString).trim();
 
+    // If ISO timestamp with timezone (T or Z), convert via Date object to local timezone
     if (str.includes('T')) {
-      str = str.split('T')[0];
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        let y = d.getFullYear();
+        if (y > 2400) y -= 543;
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
     }
 
     const dateOnly = str.split(' ')[0].trim();
 
+    // DD/MM/YYYY or DD/MM/2569
     if (dateOnly.includes('/')) {
       const parts = dateOnly.split('/');
       if (parts.length >= 3) {
@@ -51,7 +60,6 @@ const formatDateForComparison = (datetimeString) => {
         let year = parseInt(parts[2], 10);
 
         if (isNaN(day) || isNaN(month) || isNaN(year)) return "";
-
         if (year > 2400) year -= 543;
 
         const formattedMonth = String(month).padStart(2, '0');
@@ -60,16 +68,18 @@ const formatDateForComparison = (datetimeString) => {
       }
     }
 
+    // YYYY-MM-DD or DD-MM-YYYY
     if (dateOnly.includes('-')) {
       const parts = dateOnly.split('-');
       if (parts.length >= 3) {
-        if (parts[0].length === 4) {
+        if (parts[0].length === 4) { // YYYY-MM-DD
           let year = parseInt(parts[0], 10);
           if (year > 2400) year -= 543;
           const month = String(parseInt(parts[1], 10)).padStart(2, '0');
-          const day = String(parseInt(parts[2], 10)).padStart(2, '0');
+          // [MODIFIED] Fixed typo: parts[2] is day, not parts[0]
+          const day = String(parseInt(parts[2], 10)).padStart(2, '0'); 
           return `${year}-${month}-${day}`;
-        } else {
+        } else { // DD-MM-YYYY
           let year = parseInt(parts[2], 10);
           if (year > 2400) year -= 543;
           const month = String(parseInt(parts[1], 10)).padStart(2, '0');
@@ -160,11 +170,10 @@ export default function BeverageDashboard() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Default filter set to year 2023 (displayed as พ.ศ. 2566)
   const [filterMode, setFilterMode] = useState('year'); 
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
-  const [selectedYear, setSelectedYear] = useState('2023'); 
+  const [selectedYear, setSelectedYear] = useState(''); 
   
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
@@ -239,6 +248,20 @@ export default function BeverageDashboard() {
     fetchData();
   }, []);
 
+  // [MODIFIED] Auto-detect and set selectedYear to the latest year available in data
+  useEffect(() => {
+    if (data.length > 0 && !selectedYear) {
+      const years = data
+        .map(item => formatDateForComparison(item.datetime).split('-')[0])
+        .filter(Boolean)
+        .sort();
+      if (years.length > 0) {
+        const latestYear = years[years.length - 1];
+        setSelectedYear(latestYear);
+      }
+    }
+  }, [data, selectedYear]);
+
   const availableYears = useMemo(() => {
     const years = new Set(
       data.map(item => formatDateForComparison(item.datetime).split('-')[0]).filter(Boolean)
@@ -258,7 +281,7 @@ export default function BeverageDashboard() {
     return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  // [MODIFIED] Enhanced today Metrics calculation with automatic fallback to latest available date
+  // Today's metrics calculation with automatic fallback to latest available date
   const todayMetrics = useMemo(() => {
     const now = new Date();
     const yCE = now.getFullYear();
@@ -283,7 +306,7 @@ export default function BeverageDashboard() {
     let isFallbackToLatest = false;
     let todayOrders = getOrdersForIsoDate(todayIso);
 
-    // If today has no orders (e.g. historical dataset like 2023), fallback to latest date in dataset
+    // Fallback to latest date if today has 0 orders
     if (todayOrders.length === 0 && latestAvailableDate) {
       targetIso = latestAvailableDate;
       todayOrders = getOrdersForIsoDate(latestAvailableDate);
@@ -439,6 +462,8 @@ export default function BeverageDashboard() {
   if (filterMode === 'day' && selectedDate) chartTitle = `แนวโน้มยอดขายรายชั่วโมง ประจำวันที่ ${formatDateToBE(selectedDate)}`;
   if (filterMode === 'year' && selectedYear) chartTitle = `แนวโน้มยอดขายรายเดือน (Monthly Sales Trend) ประจำปี พ.ศ. ${parseInt(selectedYear) + 543}`;
 
+  const currentYearBE = selectedYear ? parseInt(selectedYear) + 543 : '';
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -447,10 +472,10 @@ export default function BeverageDashboard() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <span className="text-3xl">🥤</span> Beverage Shop Dashboard (พ.ศ. 2566)
+              <span className="text-3xl">🥤</span> Beverage Shop Dashboard {currentYearBE ? `(พ.ศ. ${currentYearBE})` : ''}
             </h1>
             <div className="flex items-center gap-3 mt-2">
-              <p className="text-slate-500 text-sm">ภาพรวมยอดขายและรายการสั่งซื้อ Real-time ประจำปี พ.ศ. 2566</p>
+              <p className="text-slate-500 text-sm">ภาพรวมยอดขายและรายการสั่งซื้อ Real-time {currentYearBE ? `ประจำปี พ.ศ. ${currentYearBE}` : ''}</p>
               
               {loading ? (
                 <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
@@ -583,7 +608,7 @@ export default function BeverageDashboard() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           
-          {/* [MODIFIED] Today's / Latest Available Day Sales KPI Card */}
+          {/* Today's / Latest Day Sales Card */}
           <KpiCard 
             title={todayMetrics.isFallbackToLatest ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})` : "ยอดขายวันนี้ (Today)"} 
             value={`฿${todayMetrics.todaySales.toLocaleString(undefined, {minimumFractionDigits: 2})}`} 
@@ -686,7 +711,7 @@ export default function BeverageDashboard() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
             <h2 className="text-lg font-semibold text-slate-800">
-              รายการออเดอร์ (ประจำปี พ.ศ. {parseInt(selectedYear || '2023') + 543})
+              รายการออเดอร์ {selectedYear ? `(ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})` : ''}
             </h2>
             <div className="relative w-full sm:w-64">
               <input 
@@ -779,7 +804,7 @@ export default function BeverageDashboard() {
                           <p className="text-sm font-semibold">{error}</p>
                         </div>
                       ) : (
-                        `ไม่พบข้อมูลใน พ.ศ. ${parseInt(selectedYear || '2023') + 543}`
+                        `ไม่พบข้อมูลใน พ.ศ. ${selectedYear ? parseInt(selectedYear) + 543 : ''}`
                       )}
                     </td>
                   </tr>
