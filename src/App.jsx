@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, memo } from 'react';
 import {
-  AreaChart,
-  Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
+  LineChart,
+  Line,
 } from 'recharts';
 import {
   ShoppingCart,
@@ -21,183 +24,142 @@ import {
   CreditCard,
   CheckCircle2,
   Calendar,
-  Search,
-  Sparkles,
   RefreshCw,
-  Zap,
-  Layers,
-  Activity,
-  Sun,
-  X,
-  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
-const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
-
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 const PAYMENT_COLORS = {
-  ไทยช่วยไทยพลัส: '#10B981',
-  โอนพร้อมเพย์: '#3B82F6',
-  เงินสด: '#F59E0B',
-  Unknown: '#64748B',
+  ไทยช่วยไทยพลัส: '#10b981', // Emerald 500
+  โอนพร้อมเพย์: '#3b82f6', // Blue 500
+  เงินสด: '#f59e0b', // Amber 500
+};
+const DELIVERY_COLORS = {
+  ส่งหน้าห้อง: '#8b5cf6', // Violet 500
+  ส่งหน้าตึก: '#ec4899', // Pink 500
+  รับเองที่ร้าน: '#14b8a6', // Teal 500
 };
 
-const monthNamesThai = [
-  '', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+const MONTH_NAMES = [
+  '',
+  'ม.ค.',
+  'ก.พ.',
+  'มี.ค.',
+  'เม.ย.',
+  'พ.ค.',
+  'มิ.ย.',
+  'ก.ค.',
+  'ส.ค.',
+  'ก.ย.',
+  'ต.ค.',
+  'พ.ย.',
+  'ธ.ค.',
 ];
 
-// [MODIFIED] Strict Thai Date Parser (DD/MM/YYYY for Slashes, YYYY-MM-DD for Dashes)
-const parseDateTime = (datetimeString) => {
-  if (!datetimeString) return null;
-  let str = String(datetimeString).trim();
-  if (!str) return null;
+const ITEMS_PER_PAGE = 20;
 
-  let year = 0, month = 0, day = 0, hour = 0, minute = 0;
-
-  // 1. ISO Timestamps with 'T' (e.g., "2026-08-03T15:00:00.000Z")
-  if (str.includes('T')) {
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) {
-      year = d.getFullYear();
-      month = d.getMonth() + 1;
-      day = d.getDate();
-      hour = d.getHours();
-      minute = d.getMinutes();
-      if (year > 2400) year -= 543;
-      return buildParsedResult(year, month, day, hour, minute);
-    }
-  }
-
-  // 2. Separate Date and Time
-  const parts = str.split(/\s+/);
-  const dateStr = parts[0];
-  const timeStr = parts[1] || '';
-
-  if (timeStr && timeStr.includes(':')) {
-    const tParts = timeStr.split(':');
-    hour = parseInt(tParts[0], 10) || 0;
-    minute = parseInt(tParts[1], 10) || 0;
-  }
-
-  // 3. Strict Delimiter Parsing
-  if (dateStr.includes('-')) {
-    const dParts = dateStr.split('-');
-    if (dParts.length >= 3) {
-      if (dParts[0].length === 4) {
-        // YYYY-MM-DD (ISO Format from Input Date)
-        year = parseInt(dParts[0], 10);
-        month = parseInt(dParts[1], 10);
-        day = parseInt(dParts[2], 10);
-      } else {
-        // DD-MM-YYYY (Thai Dashed Format)
-        day = parseInt(dParts[0], 10);
-        month = parseInt(dParts[1], 10);
-        year = parseInt(dParts[2], 10);
-      }
-    }
-  } else if (dateStr.includes('/')) {
-    const dParts = dateStr.split('/');
-    if (dParts.length >= 3) {
-      if (dParts[0].length === 4) {
-        // YYYY/MM/DD
-        year = parseInt(dParts[0], 10);
-        month = parseInt(dParts[1], 10);
-        day = parseInt(dParts[2], 10);
-      } else {
-        // DD/MM/YYYY (Strict Thai Format: Day / Month / Year)
-        day = parseInt(dParts[0], 10);
-        month = parseInt(dParts[1], 10);
-        year = parseInt(dParts[2], 10);
-      }
-    }
-  } else {
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) {
-      year = d.getFullYear();
-      month = d.getMonth() + 1;
-      day = d.getDate();
-      hour = d.getHours();
-      minute = d.getMinutes();
-    }
-  }
-
-  if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
-    return null;
-  }
-
-  // Convert B.E. (พ.ศ.) > 2400 to C.E. (ค.ศ.)
-  if (year > 2400) year -= 543;
-
-  return buildParsedResult(year, month, day, hour, minute);
-};
-
-const buildParsedResult = (year, month, day, hour, minute) => {
-  const yyyy = String(year);
-  const mm = String(month).padStart(2, '0');
-  const dd = String(day).padStart(2, '0');
-  const hh = String(hour).padStart(2, '0');
-  const min = String(minute).padStart(2, '0');
-
-  return {
-    isoDate: `${yyyy}-${mm}-${dd}`,                             // "2026-08-03"
-    isoMonth: `${yyyy}-${mm}`,                                  // "2026-08"
-    hourStr: `${hh}:00`,                                        // "15:00"
-    timeStr: `${hh}:${min}`,                                    // "15:30"
-    year,
-    month,
-    day,
-    hour,
-    yearBE: year + 543,
-    shortYearBE: String(year + 543).slice(-2),
-    displayShortBE: `${parseInt(dd, 10)} ${monthNamesThai[month]} ${String(year + 543).slice(-2)}`, // "3 ส.ค. 69"
-    displayDayMonth: `${parseInt(dd, 10)} ${monthNamesThai[month]}`,                                // "3 ส.ค."
-    displayMonthBE: `${monthNamesThai[month]} ${String(year + 543).slice(-2)}`                      // "ส.ค. 69"
-  };
-};
-
+// Date normalizer helper
 const formatDateForComparison = (datetimeString) => {
-  const parsed = parseDateTime(datetimeString);
-  return parsed ? parsed.isoDate : '';
-};
+  if (!datetimeString) return '';
+  try {
+    const trimmed = String(datetimeString).trim();
+    const datePart = trimmed.split(' ')[0];
 
-const formatDateToBE = (datetimeString) => {
-  const parsed = parseDateTime(datetimeString);
-  if (!parsed) return datetimeString || '-';
-  const timeFormatted = parsed.timeStr !== '00:00' ? ` ${parsed.timeStr}` : '';
-  return `${String(parsed.day).padStart(2, '0')}/${String(parsed.month).padStart(2, '0')}/${parsed.yearBE}${timeFormatted}`;
-};
+    if (datePart.includes('-')) {
+      const parts = datePart.split('-');
+      if (parts[0].length === 4) {
+        let y = parseInt(parts[0], 10);
+        if (y > 2400) y -= 543;
+        return `${y}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else {
+        let y = parseInt(parts[2], 10);
+        if (y > 2400) y -= 543;
+        return `${y}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
 
-const normalizeOrder = (raw) => {
-  if (!raw || typeof raw !== 'object') return raw;
-  
-  return {
-    ...raw,
-    datetime: raw.datetime || raw.timestampStr || raw['วัน-เวลา'] || raw['เวลา'] || '',
-    billId: raw.billId || raw.orderId || raw['รหัสบิล'] || raw['บิล'] || '',
-    customer: raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || raw['ลูกค้า'] || '',
-    items: raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '',
-    total: parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0,
-    payment: raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || raw['ชำระ'] || 'เงินสด',
-    status: raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '',
-    deliveryPoint: raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '',
-    address: raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '',
-    remark: raw.remark || raw.note || raw['หมายเหตุ'] || ''
-  };
-};
+    if (datePart.includes('/')) {
+      const [day, month, yearRaw] = datePart.split('/');
+      let year = parseInt(yearRaw, 10);
+      if (isNaN(year)) return '';
 
-const getAvatarColor = (name = '') => {
-  const colors = [
-    'from-indigo-500 to-purple-500',
-    'from-blue-500 to-cyan-500',
-    'from-emerald-500 to-teal-500',
-    'from-orange-500 to-amber-500',
-    'from-pink-500 to-rose-500',
-  ];
-  let charCode = 0;
-  for (let i = 0; i < name.length; i++) {
-    charCode += name.charCodeAt(i);
+      if (year > 2400) {
+        year -= 543;
+      }
+
+      const paddedMonth = month.padStart(2, '0');
+      const paddedDay = day.padStart(2, '0');
+      return `${year}-${paddedMonth}-${paddedDay}`;
+    }
+
+    return '';
+  } catch (e) {
+    return '';
   }
-  return colors[charCode % colors.length];
+};
+
+// Normalized Data Factory: คำนวณเตรียมข้อมูลครั้งเดียว ป้องกันการ parse ซ้ำ
+const normalizeOrderData = (rawItem) => {
+  const datetime = rawItem.datetime || '';
+  const dateFormatted = formatDateForComparison(datetime);
+  
+  let yearKey = '';
+  let monthKey = '';
+  let dayKey = '';
+  if (dateFormatted) {
+    const parts = dateFormatted.split('-');
+    yearKey = parts[0] || '';
+    monthKey = parts[0] && parts[1] ? `${parts[0]}-${parts[1]}` : '';
+    dayKey = dateFormatted;
+  }
+
+  let timeDisplay = '-';
+  let hourKey = '00';
+  if (datetime) {
+    const timePart = String(datetime).split(' ')[1];
+    if (timePart) {
+      timeDisplay = timePart;
+      hourKey = timePart.split(':')[0] || '00';
+    }
+  }
+
+  // Pre-calculate items quantity & lines
+  let itemCount = 0;
+  let parsedItems = [];
+  if (rawItem.items) {
+    parsedItems = String(rawItem.items).split('\n').filter(Boolean);
+    parsedItems.forEach((line) => {
+      const match = line.match(/^(\d+)x/);
+      if (match && match[1]) {
+        itemCount += parseInt(match[1], 10);
+      } else {
+        itemCount += 1;
+      }
+    });
+  }
+
+  const numTotal = typeof rawItem.total === 'number' ? rawItem.total : (parseFloat(rawItem.total) || 0);
+  const statusStr = String(rawItem.status || '');
+  const isCanceled = statusStr.includes('ยกเลิก') || statusStr.toLowerCase().includes('cancel');
+  const cleanStatus = statusStr.replace(/[🔴🟢]/g, '').trim() || 'สำเร็จ';
+
+  const searchIndex = `${rawItem.customer || ''} ${rawItem.billId || ''} ${rawItem.address || ''}`.toLowerCase();
+
+  return {
+    ...rawItem,
+    total: numTotal,
+    _dateKey: dayKey,
+    _yearKey: yearKey,
+    _monthKey: monthKey,
+    _hourKey: hourKey,
+    _timeDisplay: timeDisplay,
+    _parsedItems: parsedItems,
+    _itemCount: itemCount,
+    _isCanceled: isCanceled,
+    _cleanStatus: cleanStatus,
+    _searchIndex: searchIndex,
+  };
 };
 
 export default function BeverageDashboard() {
@@ -205,26 +167,32 @@ export default function BeverageDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Use deferred value for smooth UI input typing
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
-  const [filterMode, setFilterMode] = useState('year');
+  const [filterMode, setFilterMode] = useState('day');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
 
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const DATA_URL =
-    'https://script.google.com/macros/s/AKfycbzWpWDAZsAh1IrHn5L_7qxVyeepCods90zfR1bPqL1WklWDfk69mrf3-jCt6YSxbB09/exec';
+    'https://script.google.com/macros/s/AKfycbz8AiaKwcO7IhRqwCEsZhpPmTw9mIkWsnKB-2MDti0-hpDFQ6FGM4ExfijSDfdXm8mn/exec';
 
-  const fetchData = async () => {
+  const fetchData = async (signal) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(DATA_URL);
+      const response = await fetch(DATA_URL, { signal });
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error('404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy');
+          throw new Error(
+            '404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy ไปแล้ว'
+          );
         }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -243,34 +211,36 @@ export default function BeverageDashboard() {
           const mappedData = parsedData.slice(1).map((row) => {
             const obj = {};
             headers.forEach((header, index) => {
-              const cleanHeader = String(header || '').trim();
-              if (cleanHeader.includes('วัน-เวลา') || cleanHeader.includes('เวลา')) obj.datetime = row[index];
-              else if (cleanHeader.includes('รหัสบิล') || cleanHeader.includes('บิล')) obj.billId = row[index];
-              else if (cleanHeader.includes('ชื่อลูกค้า') || cleanHeader.includes('ลูกค้า')) obj.customer = row[index];
-              else if (cleanHeader.includes('รายการ')) obj.items = row[index];
-              else if (cleanHeader.includes('ยอดรวม')) obj.total = parseFloat(row[index]) || 0;
-              else if (cleanHeader.includes('ช่องทางชำระ') || cleanHeader.includes('ชำระ')) obj.payment = row[index];
-              else if (cleanHeader.includes('สถานะ')) obj.status = row[index];
-              else if (cleanHeader.includes('จุดจัดส่ง')) obj.deliveryPoint = row[index];
-              else if (cleanHeader.includes('ที่อยู่')) obj.address = row[index];
-              else if (cleanHeader.includes('หมายเหตุ')) obj.remark = row[index];
-              else obj[cleanHeader] = row[index];
+              if (header === 'วัน-เวลา') obj.datetime = row[index];
+              else if (header === 'รหัสบิล') obj.billId = row[index];
+              else if (header === 'ชื่อลูกค้า') obj.customer = row[index];
+              else if (header === 'รายการสินค้า') obj.items = row[index];
+              else if (header === 'ยอดรวม (บาท)')
+                obj.total = parseFloat(row[index]) || 0;
+              else if (header === 'ช่องทางชำระ') obj.payment = row[index];
+              else if (header === 'สถานะออเดอร์') obj.status = row[index];
+              else if (header === 'จุดจัดส่ง') obj.deliveryPoint = row[index];
+              else if (header === 'ที่อยู่จัดส่ง') obj.address = row[index];
+              else if (header === 'หมายเหตุ') obj.remark = row[index];
+              else obj[header] = row[index];
             });
-            return normalizeOrder(obj);
+            return normalizeOrderData(obj);
           });
           setData(mappedData);
           setIsLive(true);
         } else {
-          const normalizedData = parsedData.map(normalizeOrder);
-          setData(normalizedData);
+          const normalized = parsedData.map(normalizeOrderData);
+          setData(normalized);
           setIsLive(true);
         }
       } else {
+        console.warn('API returned empty data.');
         setData([]);
         setIsLive(false);
         setError('ไม่พบข้อมูลจากระบบ (Empty Data)');
       }
     } catch (err) {
+      if (err.name === 'AbortError') return;
       console.error('Error fetching data:', err);
       setData([]);
       setIsLive(false);
@@ -281,120 +251,72 @@ export default function BeverageDashboard() {
   };
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, []);
 
+  // Reset page when filter changes
   useEffect(() => {
-    if (data.length > 0 && !selectedYear) {
-      const years = data
-        .map((item) => formatDateForComparison(item.datetime).split('-')[0])
-        .filter(Boolean)
-        .sort();
-      if (years.length > 0) {
-        const latestYear = years[years.length - 1];
-        setSelectedYear(latestYear);
+    setCurrentPage(1);
+  }, [deferredSearchTerm, selectedDate, selectedMonth, selectedYear, filterMode, hideCanceled]);
+
+  // Generate list of available years dynamically
+  const availableYears = useMemo(() => {
+    const years = new Set();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i]._yearKey) {
+        years.add(data[i]._yearKey);
       }
     }
-  }, [data, selectedYear]);
-
-  const availableYears = useMemo(() => {
-    const years = new Set(
-      data
-        .map((item) => formatDateForComparison(item.datetime).split('-')[0])
-        .filter(Boolean)
-    );
-    if (selectedYear) years.add(selectedYear);
     return Array.from(years).sort().reverse();
-  }, [data, selectedYear]);
-
-  const latestAvailableDate = useMemo(() => {
-    if (!data || data.length === 0) return '';
-    const dates = data
-      .map((item) => formatDateForComparison(item.datetime))
-      .filter(Boolean)
-      .sort();
-    return dates.length > 0 ? dates[dates.length - 1] : '';
   }, [data]);
 
-  const todayMetrics = useMemo(() => {
-    const now = new Date();
-    const yCE = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    const todayIso = `${yCE}-${m}-${d}`;
-
-    const getOrdersForIsoDate = (isoDate) => {
-      return data.filter((item) => {
-        const status = item.status || '';
-        const isCanceled = status.includes('ยกเลิก') || status.toLowerCase().includes('cancel');
-        if (hideCanceled && isCanceled) return false;
-
-        const dt = String(item.datetime || '').trim();
-        if (!dt) return false;
-
-        return formatDateForComparison(dt) === isoDate;
-      });
-    };
-
-    let targetIso = todayIso;
-    let isFallbackToLatest = false;
-    let todayOrders = getOrdersForIsoDate(todayIso);
-
-    if (todayOrders.length === 0 && latestAvailableDate) {
-      targetIso = latestAvailableDate;
-      todayOrders = getOrdersForIsoDate(latestAvailableDate);
-      isFallbackToLatest = true;
+  // Find the latest available date
+  const latestAvailableDate = useMemo(() => {
+    if (!data || data.length === 0) return '';
+    let maxDate = '';
+    for (let i = 0; i < data.length; i++) {
+      const d = data[i]._dateKey;
+      if (d && d > maxDate) {
+        maxDate = d;
+      }
     }
+    return maxDate;
+  }, [data]);
 
-    const todaySales = todayOrders.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
-    return { 
-      todaySales, 
-      todayCount: todayOrders.length,
-      targetIso,
-      isFallbackToLatest
-    };
-  }, [data, hideCanceled, latestAvailableDate]);
-
+  // Filter data using precomputed properties
   const displayData = useMemo(() => {
     let filtered = data;
+    const lowerSearch = deferredSearchTerm.trim().toLowerCase();
 
-    if (filterMode === 'day' && selectedDate) {
-      filtered = filtered.filter(
-        (item) => formatDateForComparison(item.datetime) === selectedDate
-      );
-    } else if (filterMode === 'month' && selectedMonth) {
-      filtered = filtered.filter((item) =>
-        formatDateForComparison(item.datetime).startsWith(selectedMonth)
-      );
-    } else if (filterMode === 'year' && selectedYear) {
-      filtered = filtered.filter((item) =>
-        formatDateForComparison(item.datetime).startsWith(selectedYear)
-      );
-    }
+    return filtered.filter((item) => {
+      // 1. Filter by Mode
+      if (filterMode === 'day' && selectedDate && item._dateKey !== selectedDate) {
+        return false;
+      }
+      if (filterMode === 'month' && selectedMonth && item._monthKey !== selectedMonth) {
+        return false;
+      }
+      if (filterMode === 'year' && selectedYear && item._yearKey !== selectedYear) {
+        return false;
+      }
 
-    if (searchTerm) {
-      const lowerCaseSearch = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (item) =>
-          (item.customer?.toLowerCase() || '').includes(lowerCaseSearch) ||
-          (item.billId?.toLowerCase() || '').includes(lowerCaseSearch) ||
-          (item.address?.toLowerCase() || '').includes(lowerCaseSearch)
-      );
-    }
+      // 2. Filter out canceled orders
+      if (hideCanceled && item._isCanceled) {
+        return false;
+      }
 
-    if (hideCanceled) {
-      filtered = filtered.filter((item) => {
-        const status = item.status || '';
-        return (
-          !status.includes('ยกเลิก') && !status.toLowerCase().includes('cancel')
-        );
-      });
-    }
+      // 3. Filter by Search Term
+      if (lowerSearch && !item._searchIndex.includes(lowerSearch)) {
+        return false;
+      }
 
-    return filtered;
+      return true;
+    });
   }, [
     data,
-    searchTerm,
+    deferredSearchTerm,
     selectedDate,
     selectedMonth,
     selectedYear,
@@ -402,189 +324,220 @@ export default function BeverageDashboard() {
     filterMode,
   ]);
 
+  // Calculate metrics in a single pass
   const metrics = useMemo(() => {
-    const totalSales = displayData.reduce(
-      (sum, item) => sum + (parseFloat(item.total) || 0),
-      0
-    );
-    const totalOrders = displayData.length;
-    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
-
+    let totalSales = 0;
     let totalItems = 0;
-    displayData.forEach((order) => {
-      const itemsStr = order.items || '';
-      if (itemsStr) {
-        const lines = String(itemsStr).split(/\n|,/);
-        lines.forEach((line) => {
-          const trimmed = line.trim();
-          if (!trimmed) return;
-          const match = trimmed.match(/^(\d+)\s*x/i) || trimmed.match(/x\s*(\d+)/i);
-          if (match && match[1]) {
-            totalItems += parseInt(match[1], 10);
-          } else {
-            totalItems += 1;
-          }
-        });
-      }
-    });
+    const totalOrders = displayData.length;
 
+    for (let i = 0; i < totalOrders; i++) {
+      const order = displayData[i];
+      totalSales += order.total;
+      totalItems += order._itemCount;
+    }
+
+    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
+  // Calculate charts data with single pass aggregation
   const chartsData = useMemo(() => {
     const paymentMap = {};
-    displayData.forEach((item) => {
-      const pm = item.payment || 'เงินสด';
+    const trendMap = {};
+
+    for (let i = 0; i < displayData.length; i++) {
+      const item = displayData[i];
+
+      // Payment Breakdown
+      const pm = item.payment || 'Unknown';
       paymentMap[pm] = (paymentMap[pm] || 0) + 1;
-    });
+
+      // Trend Chart
+      if (item._dateKey) {
+        let sortKey = '';
+        let displayKey = '';
+
+        if (filterMode === 'day') {
+          sortKey = item._hourKey;
+          displayKey = `${sortKey}:00`;
+        } else if (filterMode === 'month') {
+          sortKey = item._dateKey;
+          const parts = item._dateKey.split('-');
+          const dd = parseInt(parts[2], 10);
+          const mm = parseInt(parts[1], 10);
+          displayKey = `${dd} ${MONTH_NAMES[mm] || ''}`;
+        } else if (filterMode === 'year') {
+          sortKey = item._monthKey;
+          const parts = item._dateKey.split('-');
+          const yyyy = parseInt(parts[0], 10);
+          const mm = parseInt(parts[1], 10);
+          const yearBE = yyyy + 543;
+          displayKey = `${MONTH_NAMES[mm] || ''} ${yearBE.toString().slice(-2)}`;
+        }
+
+        if (sortKey) {
+          if (!trendMap[sortKey]) {
+            trendMap[sortKey] = { time: displayKey, sales: 0 };
+          }
+          trendMap[sortKey].sales += item.total;
+        }
+      }
+    }
+
     const paymentData = Object.keys(paymentMap).map((key) => ({
       name: key,
       value: paymentMap[key],
     }));
-
-    const trendMap = {};
-
-    displayData.forEach((item) => {
-      if (!item.datetime) return;
-      const parsed = parseDateTime(item.datetime);
-      if (!parsed) return;
-
-      let sortKey = '';
-      let displayKey = '';
-
-      if (filterMode === 'day' && selectedDate) {
-        sortKey = String(parsed.hour).padStart(2, '0');
-        displayKey = parsed.hourStr;
-      } else if (filterMode === 'year' && selectedYear) {
-        sortKey = parsed.isoMonth;
-        displayKey = parsed.displayMonthBE;
-      } else if (filterMode === 'month' && selectedMonth) {
-        sortKey = parsed.isoDate;
-        displayKey = parsed.displayDayMonth;
-      } else {
-        sortKey = parsed.isoDate;
-        displayKey = parsed.displayShortBE;
-      }
-
-      if (!trendMap[sortKey]) {
-        trendMap[sortKey] = { time: displayKey, sales: 0 };
-      }
-      trendMap[sortKey].sales += parseFloat(item.total) || 0;
-    });
 
     const trendData = Object.keys(trendMap)
       .sort()
       .map((key) => trendMap[key]);
 
     return { paymentData, trendData };
-  }, [displayData, filterMode, selectedDate, selectedMonth, selectedYear]);
+  }, [displayData, filterMode]);
 
-  let chartTitle = 'แนวโน้มยอดขายรายวัน (Daily Sales Trend)';
-  if (filterMode === 'day' && selectedDate)
-    chartTitle = `แนวโน้มยอดขายรายชั่วโมง (วันที่ ${formatDateToBE(selectedDate)})`;
-  if (filterMode === 'year' && selectedYear)
-    chartTitle = `แนวโน้มยอดขายรายเดือน (ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})`;
+  // Pagination Slice
+  const totalPages = Math.ceil(displayData.length / ITEMS_PER_PAGE) || 1;
+  const paginatedOrders = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return displayData.slice(start, start + ITEMS_PER_PAGE);
+  }, [displayData, currentPage]);
+
+  let chartTitle = 'แนวโน้มยอดขายรายชั่วโมง (Hourly Sales Trend)';
+  if (filterMode === 'month')
+    chartTitle = 'แนวโน้มยอดขายรายวัน (Daily Sales Trend)';
+  if (filterMode === 'year')
+    chartTitle = 'แนวโน้มยอดขายรายเดือน (Monthly Sales Trend)';
 
   return (
-    <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white p-4 sm:p-6 lg:p-8">
-      {/* Background Glow Overlay */}
-      <div className="fixed top-0 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[128px] pointer-events-none" />
-      <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-[128px] pointer-events-none" />
+    <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header Section */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <span className="text-3xl">🥤</span> Beverage Shop Dashboard
+            </h1>
+            <div className="flex items-center gap-3 mt-2">
+              <p className="text-slate-500 text-sm">
+                Real-time overview of daily sales and orders
+              </p>
 
-      <div className="max-w-7xl mx-auto space-y-8 relative z-10">
-        
-        {/* HEADER SECTION */}
-        <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 p-0.5 shadow-lg shadow-indigo-500/20">
-              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-                <Sparkles className="w-7 h-7 text-indigo-400" />
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-black tracking-tight text-white font-sans">
-                  DRINKHUB <span className="bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent">PRO</span>
-                </h1>
-                <span className="px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full">
-                  Enterprise
+              {/* Status Indicator */}
+              {loading ? (
+                <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
+                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Syncing...
                 </span>
-              </div>
-              <div className="flex items-center gap-3 mt-1">
-                <p className="text-slate-400 text-xs font-medium">
-                  Real-time beverage analytics & revenue engine {selectedYear ? `(พ.ศ. ${parseInt(selectedYear) + 543})` : ''}
-                </p>
-                {loading ? (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20 animate-pulse">
-                    <RefreshCw className="w-3 h-3 animate-spin" /> Syncing...
-                  </span>
-                ) : error ? (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/20">
-                    <AlertCircle className="w-3 h-3" /> API Error
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> {isLive ? 'Live Engine' : 'Offline'}
-                  </span>
-                )}
-              </div>
+              ) : error ? (
+                <span className="text-xs px-2 py-1 rounded-full border bg-red-50 text-red-600 border-red-200">
+                  🔴 {error}
+                </span>
+              ) : (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full border ${
+                    isLive
+                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {isLive ? '🟢 Live Data' : '⚪ Waiting for Data'}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* CONTROLS */}
-          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-            {/* Segmented Period Tabs */}
-            <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 shadow-inner">
-              {['day', 'month', 'year'].map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setFilterMode(mode)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 capitalize ${
-                    filterMode === mode
-                      ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-md shadow-indigo-500/25'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {mode === 'day' ? 'รายวัน' : mode === 'month' ? 'รายเดือน' : 'รายปี'}
-                </button>
-              ))}
+          {/* Controls Wrapper */}
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+            {/* Period Filter Toggle */}
+            <div className="flex bg-slate-100 p-1 rounded-lg text-sm w-full sm:w-auto">
+              <button
+                onClick={() => setFilterMode('day')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${
+                  filterMode === 'day'
+                    ? 'bg-white text-indigo-600 shadow-sm font-medium'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                วัน
+              </button>
+              <button
+                onClick={() => setFilterMode('month')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${
+                  filterMode === 'month'
+                    ? 'bg-white text-indigo-600 shadow-sm font-medium'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                เดือน
+              </button>
+              <button
+                onClick={() => setFilterMode('year')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${
+                  filterMode === 'year'
+                    ? 'bg-white text-indigo-600 shadow-sm font-medium'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                ปี
+              </button>
             </div>
 
-            {/* Date Inputs */}
-            <div className="relative flex-1 sm:flex-none min-w-[150px]">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <Calendar className="w-4 h-4" />
+            {/* Dynamic Date Picker Input */}
+            <div className="relative w-full sm:w-auto min-w-[160px]">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                <Calendar size={18} />
               </div>
+
               {filterMode === 'day' && (
                 <input
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
                 />
               )}
+
               {filterMode === 'month' && (
                 <input
                   type="month"
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
                 />
               )}
+
               {filterMode === 'year' && (
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer font-mono"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all appearance-none cursor-pointer"
                 >
-                  <option value="">ทั้งหมด (All Years)</option>
+                  <option value="">เลือกปี (All Years)</option>
                   {availableYears.map((year) => (
                     <option key={year} value={year}>
-                      พ.ศ. {parseInt(year) + 543} ({year})
+                      {parseInt(year, 10) + 543} ({year})
                     </option>
                   ))}
                 </select>
               )}
+
+              {/* Clear Date Button */}
               {((filterMode === 'day' && selectedDate) ||
                 (filterMode === 'month' && selectedMonth) ||
                 (filterMode === 'year' && selectedYear)) && (
@@ -594,166 +547,168 @@ export default function BeverageDashboard() {
                     if (filterMode === 'month') setSelectedMonth('');
                     if (filterMode === 'year') setSelectedYear('');
                   }}
-                  className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-500 hover:text-slate-300"
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
+                  title="Clear filter"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    ></path>
+                  </svg>
                 </button>
               )}
             </div>
 
-            {/* Toggle Canceled */}
-            <label className="flex items-center gap-2 cursor-pointer bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800/80 text-xs font-medium text-slate-300 hover:border-slate-700 transition-all">
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer bg-white px-3 py-2.5 rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors">
               <input
                 type="checkbox"
                 checked={hideCanceled}
                 onChange={(e) => setHideCanceled(e.target.checked)}
-                className="sr-only peer"
+                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
               />
-              <div className="w-8 h-4 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
-              <span>ซ่อนรายการยกเลิก</span>
+              ซ่อนรายการยกเลิก
             </label>
-
-            {/* Refresh Button */}
-            <button 
-              onClick={fetchData}
-              className="p-2 bg-slate-950/80 border border-slate-800/80 rounded-xl text-slate-400 hover:text-white hover:border-slate-700 transition-all shadow-sm"
-              title="รีเฟรชข้อมูล"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
           </div>
         </header>
 
-        {/* NOTIFICATION BANNER */}
-        {data.length > 0 && displayData.length === 0 && filterMode === 'day' && selectedDate && (
-          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 text-amber-300 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-lg backdrop-blur-md">
-            <div className="flex items-center gap-2.5">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>
-                ไม่พบบันทึกรายการสำหรับวันที่ <strong className="text-white font-mono">{formatDateToBE(selectedDate)}</strong>
-                {latestAvailableDate && (
-                  <> (ข้อมูลล่าสุดในระบบคือวันที่ <strong className="text-amber-200 font-mono">{formatDateToBE(latestAvailableDate)}</strong>)</>
-                )}
-              </span>
+        {/* Helpful Notification Banner when filtered date has 0 records */}
+        {data.length > 0 &&
+          displayData.length === 0 &&
+          filterMode === 'day' &&
+          selectedDate && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm shadow-sm">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={20} className="text-amber-600 shrink-0" />
+                <span>
+                  ยังไม่มีข้อมูลรายการออเดอร์ในวันที่{' '}
+                  <strong>{selectedDate}</strong>
+                  {latestAvailableDate && (
+                    <>
+                      {' '}
+                      (ข้อมูลล่าสุดในระบบคือวันที่{' '}
+                      <strong>{latestAvailableDate}</strong>)
+                    </>
+                  )}
+                </span>
+              </div>
+              {latestAvailableDate && (
+                <button
+                  onClick={() => setSelectedDate(latestAvailableDate)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-sm"
+                >
+                  ดูวันที่ล่าสุด ({latestAvailableDate})
+                </button>
+              )}
             </div>
-            {latestAvailableDate && (
-              <button
-                onClick={() => setSelectedDate(latestAvailableDate)}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-md flex items-center gap-1"
-              >
-                สลับไปวันที่ล่าสุด <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        )}
+          )}
 
-        {/* METRICS GRID */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard
-            title={
-              todayMetrics.isFallbackToLatest
-                ? `ยอดขายวันล่าสุด (${formatDateToBE(todayMetrics.targetIso)})`
-                : "ยอดขายวันนี้ (Today)"
-            }
-            value={`฿${todayMetrics.todaySales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            icon={<Sun className="w-6 h-6 text-amber-400" />}
-            glow="bg-amber-500"
-            gradient="from-amber-500/20 to-orange-500/10"
-            badge={todayMetrics.isFallbackToLatest ? "Latest" : "Today"}
-          />
-          <KpiCard
-            title="ยอดขายรวม (Total Revenue)"
-            value={`฿${metrics.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            icon={<DollarSign className="w-6 h-6 text-emerald-400" />}
-            glow="bg-emerald-500"
-            gradient="from-emerald-500/20 to-teal-500/10"
-            badge="Revenue"
+            title="ยอดขายรวม (Total Sales)"
+            value={`฿${metrics.totalSales.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+            })}`}
+            icon={<DollarSign size={24} className="text-emerald-500" />}
+            trend={data.length > 0 ? 'อัปเดตล่าสุด' : 'รอข้อมูล'}
+            trendUp={true}
           />
           <KpiCard
             title="ออเดอร์ทั้งหมด (Total Orders)"
-            value={metrics.totalOrders.toLocaleString()}
-            icon={<ShoppingCart className="w-6 h-6 text-indigo-400" />}
-            glow="bg-indigo-500"
-            gradient="from-indigo-500/20 to-purple-500/10"
-            badge="Volume"
+            value={metrics.totalOrders}
+            icon={<ShoppingCart size={24} className="text-blue-500" />}
           />
           <KpiCard
-            title="แก้ว/สินค้าขายได้ (Total Items)"
-            value={metrics.totalItems.toLocaleString()}
-            icon={<Package className="w-6 h-6 text-purple-400" />}
-            glow="bg-purple-500"
-            gradient="from-purple-500/20 to-pink-500/10"
-            badge="Units"
+            title="จำนวนสินค้า (Total Items)"
+            value={metrics.totalItems}
+            icon={<Package size={24} className="text-purple-500" />}
           />
           <KpiCard
-            title="ยอดเฉลี่ยต่อบิล (Avg. Ticket)"
-            value={`฿${metrics.avgOrderValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            icon={<TrendingUp className="w-6 h-6 text-cyan-400" />}
-            glow="bg-cyan-500"
-            gradient="from-cyan-500/20 to-blue-500/10"
-            badge="Avg/Bill"
+            title="ยอดเฉลี่ยต่อบิล (Avg. Order)"
+            value={`฿${metrics.avgOrderValue.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`}
+            icon={<TrendingUp size={24} className="text-amber-500" />}
           />
         </div>
 
-        {/* CHARTS SECTION */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Main Area Chart */}
-          <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl lg:col-span-2">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-indigo-400" />
-                  {chartTitle}
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">ภาพรวมแนวโน้มรายได้ตามช่วงเวลา</p>
-              </div>
-            </div>
-            
+          {/* Sales Trend Chart */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
+            <h2 className="text-lg font-semibold mb-4 text-slate-800">
+              {chartTitle}
+            </h2>
             <div className="h-[300px] w-full">
               {chartsData.trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartsData.trendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366F1" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#6366F1" stopOpacity={0.0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1E293B" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={(val) => `฿${val}`} />
-                    <RechartsTooltip content={<CustomTooltip />} />
-                    <Area
+                  <LineChart
+                    data={chartsData.trendData}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#e2e8f0"
+                    />
+                    <XAxis
+                      dataKey="time"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#64748b', fontSize: 12 }}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#64748b', fontSize: 12 }}
+                      tickFormatter={(value) => `฿${value}`}
+                    />
+                    <RechartsTooltip
+                      contentStyle={{
+                        borderRadius: '8px',
+                        border: 'none',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                      }}
+                      formatter={(value) => [`฿${value}`, 'Sales']}
+                    />
+                    <Line
                       type="monotone"
                       dataKey="sales"
-                      stroke="#6366F1"
+                      stroke="#3b82f6"
                       strokeWidth={3}
-                      fillOpacity={1}
-                      fill="url(#salesGradient)"
+                      dot={{
+                        r: 4,
+                        fill: '#3b82f6',
+                        strokeWidth: 2,
+                        stroke: 'white',
+                      }}
+                      activeDot={{ r: 8 }}
+                      isAnimationActive={false}
                     />
-                  </AreaChart>
+                  </LineChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs">
-                  <Layers className="w-8 h-8 mb-2 opacity-40" />
-                  ไม่มีข้อมูลสำหรับแสดงผลกราฟในเลือกช่วงเวลานี้
+                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                  ไม่มีข้อมูลสำหรับแสดงผลกราฟ
                 </div>
               )}
             </div>
           </div>
 
-          {/* Donut Payment Chart */}
-          <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl flex flex-col justify-between">
-            <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2 mb-1">
-                <CreditCard className="w-4 h-4 text-emerald-400" />
-                ช่องทางชำระเงิน (Payments)
-              </h2>
-              <p className="text-xs text-slate-400">สัดส่วนการชำระเงินของลูกค้า</p>
-            </div>
-
-            <div className="h-[200px] w-full my-2 relative flex items-center justify-center">
+          {/* Payment Methods Chart */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h2 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2">
+              <CreditCard size={18} className="text-slate-400" />{' '}
+              ช่องทางชำระเงิน
+            </h2>
+            <div className="h-[250px] w-full">
               {chartsData.paymentData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -762,220 +717,300 @@ export default function BeverageDashboard() {
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
-                      outerRadius={85}
-                      paddingAngle={6}
+                      outerRadius={90}
+                      paddingAngle={5}
                       dataKey="value"
+                      isAnimationActive={false}
                     >
                       {chartsData.paymentData.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
-                          fill={PAYMENT_COLORS[entry.name] || COLORS[index % COLORS.length]}
-                          stroke="transparent"
+                          fill={
+                            PAYMENT_COLORS[entry.name] ||
+                            COLORS[index % COLORS.length]
+                          }
                         />
                       ))}
                     </Pie>
-                    <RechartsTooltip content={<CustomPieTooltip />} />
+                    <RechartsTooltip
+                      contentStyle={{
+                        borderRadius: '8px',
+                        border: 'none',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={36}
+                      iconType="circle"
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="text-slate-500 text-xs">ไม่มีข้อมูล</div>
-              )}
-            </div>
-
-            {/* Custom Payment Legend */}
-            <div className="space-y-2">
-              {chartsData.paymentData.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between text-xs bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-800/50">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: PAYMENT_COLORS[item.name] || COLORS[idx % COLORS.length] }}
-                    />
-                    <span className="text-slate-300 font-medium">{item.name}</span>
-                  </div>
-                  <span className="font-mono font-bold text-white">{item.value} บิล</span>
+                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                  ไม่มีข้อมูล
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
 
-        {/* ORDERS TABLE SECTION */}
-        <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden">
-          
-          <div className="p-6 border-b border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        {/* Recent Orders Table */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Zap className="w-4 h-4 text-amber-400" />
-                รายการออเดอร์ล่าสุด (Live Transactions)
+              <h2 className="text-lg font-semibold text-slate-800">
+                รายการออเดอร์ล่าสุด (Recent Orders)
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">แสดง {displayData.length} รายการที่ตรงตามเงื่อนไข</p>
+              {displayData.length > 0 && (
+                <p className="text-xs text-slate-500 mt-1">
+                  พบทั้งหมด {displayData.length.toLocaleString()} รายการ
+                </p>
+              )}
             </div>
-
-            <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+            <div className="relative w-full sm:w-64">
               <input
                 type="text"
-                placeholder="ค้นหาชื่อลูกค้า, รหัสบิล, ที่อยู่..."
-                className="w-full bg-slate-950/90 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                placeholder="ค้นหาชื่อ, รหัสบิล, ที่อยู่..."
+                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                disabled={data.length === 0}
               />
+              <svg
+                className="w-4 h-4 text-slate-400 absolute left-3 top-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                ></path>
+              </svg>
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800/80 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                  <th scope="col" className="px-6 py-4">วัน-เวลา (Time)</th>
-                  <th scope="col" className="px-6 py-4">รหัสบิล (Bill ID)</th>
-                  <th scope="col" className="px-6 py-4">ลูกค้า (Customer)</th>
-                  <th scope="col" className="px-6 py-4">รายการสินค้า (Items)</th>
-                  <th scope="col" className="px-6 py-4 text-right">ยอดรวม (Total)</th>
-                  <th scope="col" className="px-6 py-4 text-center">สถานะ (Status)</th>
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-slate-500 uppercase bg-slate-50/50 border-b border-slate-100">
+                <tr>
+                  <th scope="col" className="px-6 py-4 font-medium">
+                    เวลา (Time)
+                  </th>
+                  <th scope="col" className="px-6 py-4 font-medium">
+                    รหัสบิล (Bill ID)
+                  </th>
+                  <th scope="col" className="px-6 py-4 font-medium">
+                    ลูกค้า (Customer)
+                  </th>
+                  <th scope="col" className="px-6 py-4 font-medium">
+                    รายการ (Items)
+                  </th>
+                  <th scope="col" className="px-6 py-4 font-medium text-right">
+                    ยอดรวม (Total)
+                  </th>
+                  <th scope="col" className="px-6 py-4 font-medium text-center">
+                    สถานะ (Status)
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50 text-xs">
+              <tbody>
                 {loading && data.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center text-slate-400">
+                    <td
+                      colSpan="6"
+                      className="px-6 py-12 text-center text-slate-500"
+                    >
                       <div className="flex flex-col items-center gap-2">
-                        <RefreshCw className="w-6 h-6 animate-spin text-indigo-400" />
-                        <span>กำลังเชื่อมต่อฐานข้อมูล...</span>
+                        <svg
+                          className="animate-spin h-6 w-6 text-indigo-500"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            fill="none"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                        กำลังโหลดข้อมูล...
                       </div>
                     </td>
                   </tr>
-                ) : displayData.length > 0 ? (
-                  displayData.map((order, index) => {
-                    const isCanceled =
-                      (order.status || '').includes('ยกเลิก') ||
-                      (order.status || '').toLowerCase().includes('cancel');
-
-                    return (
-                      <tr
-                        key={order.billId || index}
-                        className="hover:bg-slate-800/30 transition-colors group"
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap font-mono text-slate-400">
-                          {formatDateToBE(order.datetime)}
-                        </td>
-                        <td className="px-6 py-4 font-mono font-medium text-indigo-400">
-                          #{order.billId}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-full bg-gradient-to-tr ${getAvatarColor(order.customer)} flex items-center justify-center font-bold text-white shadow-md`}>
-                              {order.customer ? order.customer.charAt(0).toUpperCase() : '?'}
-                            </div>
-                            <div>
-                              <p className="font-semibold text-slate-200">{order.customer || 'ลูกค้าทั่วไป'}</p>
-                              <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                                <MapPin className="w-3 h-3 text-slate-600" /> {order.address || 'รับที่ร้าน'}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-wrap gap-1 max-w-xs">
-                            {String(order.items || '-').split(/\n|,/).map((item, i) => (
-                              <span
-                                key={i}
-                                className="bg-slate-950/80 border border-slate-800 text-slate-300 text-[11px] px-2 py-0.5 rounded-md truncate max-w-[200px]"
-                                title={item.trim()}
-                              >
-                                {item.trim()}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-right font-mono font-bold text-emerald-400 text-sm">
-                          ฿{parseFloat(order.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border shadow-sm ${
-                              isCanceled
-                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-rose-500/10'
-                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-emerald-500/10'
-                            }`}
-                          >
-                            {isCanceled ? (
-                              <AlertCircle className="w-3 h-3" />
-                            ) : (
-                              <CheckCircle2 className="w-3 h-3" />
-                            )}
-                            {(order.status || '').replace(/[🔴🟢]/g, '').trim() || 'สำเร็จ'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
+                ) : paginatedOrders.length > 0 ? (
+                  paginatedOrders.map((order, index) => (
+                    <OrderRow key={order.billId || index} order={order} />
+                  ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
-                      ไม่พบข้อมูลรายการออเดอร์ตามเงื่อนไขที่เลือก
+                    <td
+                      colSpan="6"
+                      className="px-6 py-12 text-center text-slate-500"
+                    >
+                      {error ? (
+                        <div className="flex flex-col items-center gap-2 text-red-500">
+                          <AlertCircle size={32} />
+                          <p className="font-medium text-lg">
+                            เกิดข้อผิดพลาดในการเชื่อมต่อข้อมูล
+                          </p>
+                          <p className="text-sm font-semibold">{error}</p>
+                          <div className="text-xs text-slate-500 mt-4 max-w-md bg-slate-50 p-4 rounded-lg border border-slate-200 text-left">
+                            <p className="font-bold mb-1 text-slate-700">
+                              วิธีแก้ไข:
+                            </p>
+                            <ol className="list-decimal pl-4 space-y-1">
+                              <li>
+                                ไปที่ Google Sheets ของคุณ ➔ Extensions ➔ Apps
+                                Script
+                              </li>
+                              <li>
+                                กดปุ่ม <b>Deploy</b> (มุมขวาบน) ➔ New deployment
+                                (หรือ Manage deployments)
+                              </li>
+                              <li>
+                                ตั้งค่า Who has access เป็น{' '}
+                                <b>Anyone (ทุกคน)</b>
+                              </li>
+                              <li>
+                                คัดลอก URL ใหม่มาใส่ในตัวแปร{' '}
+                                <code className="bg-white px-1 py-0.5 rounded border border-slate-300">
+                                  DATA_URL
+                                </code>{' '}
+                                ในโค้ด
+                              </li>
+                            </ol>
+                          </div>
+                        </div>
+                      ) : (
+                        'ไม่พบข้อมูล (No data found)'
+                      )}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </div>
 
+          {/* Table Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50">
+              <p className="text-xs text-slate-500">
+                แสดงแถว {(currentPage - 1) * ITEMS_PER_PAGE + 1} ถึง{' '}
+                {Math.min(currentPage * ITEMS_PER_PAGE, displayData.length)} จากทั้งหมด{' '}
+                {displayData.length} รายการ
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
+                  title="Previous page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs font-medium text-slate-700 px-2">
+                  หน้า {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
+                  title="Next page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// KPI CARD COMPONENT WITH AMBIENT GLOW
-function KpiCard({ title, value, icon, glow, gradient, badge }) {
+// Memoized Table Row เพื่อลด DOM Reconciliation Time
+const OrderRow = memo(function OrderRow({ order }) {
   return (
-    <div className="relative group overflow-hidden bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 hover:border-slate-700/80 transition-all duration-300 shadow-xl">
-      <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full blur-2xl opacity-15 transition-opacity group-hover:opacity-30 ${glow}`} />
-      
-      <div className="flex justify-between items-start relative z-10">
-        <div>
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 bg-slate-950/60 px-2 py-0.5 rounded-md border border-slate-800">
-            {badge}
-          </span>
-          <p className="text-xs font-medium text-slate-400 mt-3 mb-1">{title}</p>
-          <h3 className="text-2xl font-black tracking-tight text-white font-mono">
-            {value}
-          </h3>
+    <tr className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
+      <td className="px-6 py-4 whitespace-nowrap text-slate-500">
+        {order._timeDisplay}
+      </td>
+      <td className="px-6 py-4 font-mono text-xs text-slate-500">
+        {order.billId}
+      </td>
+      <td className="px-6 py-4 font-medium text-slate-700">
+        {order.customer}
+        <div className="text-xs text-slate-400 flex items-center gap-1 mt-1">
+          <MapPin size={12} /> {order.address}
         </div>
-        <div className={`p-3 rounded-2xl bg-gradient-to-br ${gradient} border border-white/10 shadow-lg`}>
-          {icon}
+      </td>
+      <td className="px-6 py-4">
+        <div className="space-y-1">
+          {order._parsedItems.map((item, i) => (
+            <div
+              key={i}
+              className="text-slate-600 bg-slate-50 px-2 py-1 rounded text-xs border border-slate-100 w-max max-w-xs truncate"
+              title={item}
+            >
+              {item}
+            </div>
+          ))}
         </div>
+      </td>
+      <td className="px-6 py-4 font-semibold text-slate-800 text-right">
+        ฿{order.total.toLocaleString()}
+      </td>
+      <td className="px-6 py-4 text-center">
+        <div
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+            order._isCanceled
+              ? 'bg-red-50 text-red-600 border-red-100'
+              : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+          }`}
+        >
+          {order._isCanceled ? (
+            <AlertCircle size={14} />
+          ) : (
+            <CheckCircle2 size={14} />
+          )}
+          {order._cleanStatus}
+        </div>
+      </td>
+    </tr>
+  );
+});
+
+// Memoized KPI Card
+const KpiCard = memo(function KpiCard({ title, value, icon, trend, trendUp }) {
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between group hover:border-indigo-100 transition-colors">
+      <div>
+        <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
+        <h3 className="text-2xl font-bold text-slate-800">{value}</h3>
+        {trend && (
+          <p
+            className={`text-xs mt-2 flex items-center gap-1 ${
+              trendUp ? 'text-emerald-500' : 'text-slate-400'
+            }`}
+          >
+            {trendUp ? '↑' : ''} {trend}
+          </p>
+        )}
+      </div>
+      <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-110 transition-transform">
+        {icon}
       </div>
     </div>
   );
-}
-
-// CUSTOM TOOLTIP FOR AREA CHART
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 p-3 rounded-2xl shadow-2xl font-mono">
-        <p className="text-[11px] text-slate-400 mb-1">{label}</p>
-        <p className="text-sm font-bold text-indigo-400">
-          ฿{Number(payload[0].value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-        </p>
-      </div>
-    );
-  }
-  return null;
-};
-
-// CUSTOM TOOLTIP FOR PIE CHART
-const CustomPieTooltip = ({ active, payload }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 px-3 py-2 rounded-xl shadow-2xl text-xs">
-        <p className="font-semibold text-white">{payload[0].name}</p>
-        <p className="text-slate-400 font-mono mt-0.5">{payload[0].value} ออเดอร์</p>
-      </div>
-    );
-  }
-  return null;
-};
+});
