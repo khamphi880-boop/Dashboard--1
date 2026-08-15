@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   AreaChart,
   Area,
@@ -31,6 +30,7 @@ import {
   Sun,
   X,
   ArrowUpRight,
+  Radio,
 } from 'lucide-react';
 
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
@@ -218,6 +218,8 @@ const getAvatarColor = (name = '') => {
 export default function BeverageDashboard() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -229,17 +231,31 @@ export default function BeverageDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
+  // Real-time Controls
+  const [autoSync, setAutoSync] = useState(true);
+  const [syncInterval, setSyncInterval] = useState(30); // วินาที (15, 30, 60)
+
+  const isFetchingRef = useRef(false);
+
   const DATA_URL =
     'https://script.google.com/macros/s/AKfycbzWpWDAZsAh1IrHn5L_7qxVyeepCods90zfR1bPqL1WklWDfk69mrf3-jCt6YSxbB09/exec';
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (isBackground = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
+    if (isBackground) {
+      setIsSyncing(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
+
     try {
-      const response = await fetch(DATA_URL);
+      const response = await fetch(DATA_URL, { cache: 'no-store' });
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error('404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy');
+          throw new Error('404 Not Found - ลิงก์ API ไม่ถูกต้อง');
         }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -280,24 +296,64 @@ export default function BeverageDashboard() {
           setData(normalizedData);
           setIsLive(true);
         }
+        
+        const now = new Date();
+        setLastSyncTime(
+          `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+        );
       } else {
-        setData([]);
-        setIsLive(false);
-        setError('ไม่พบข้อมูลจากระบบ (Empty Data)');
+        if (!isBackground) {
+          setData([]);
+          setIsLive(false);
+          setError('ไม่พบข้อมูลจากระบบ (Empty Data)');
+        }
       }
     } catch (err) {
       console.error('Error fetching data:', err);
-      setData([]);
-      setIsLive(false);
-      setError(err.message || 'ไม่สามารถดึงข้อมูลได้ (Connection Error)');
+      if (!isBackground) {
+        setData([]);
+        setIsLive(false);
+        setError(err.message || 'ไม่สามารถดึงข้อมูลได้ (Connection Error)');
+      }
     } finally {
-      setLoading(false);
+      if (isBackground) {
+        setIsSyncing(false);
+      } else {
+        setLoading(false);
+      }
+      isFetchingRef.current = false;
     }
-  };
+  }, [DATA_URL]);
 
+  // Initial Fetch
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(false);
+  }, [fetchData]);
+
+  // Real-time Background Polling Engine with Visibility Detection
+  useEffect(() => {
+    if (!autoSync || syncInterval <= 0) return;
+
+    const intervalId = setInterval(() => {
+      // ตรวจสอบว่าผู้ใช้กำลังเปิดดูหน้านี้อยู่หรือไม่ (ถ้าพับหน้าจออยู่จะไม่ยิง API เปล่าประโยชน์)
+      if (document.visibilityState === 'visible') {
+        fetchData(true);
+      }
+    }, syncInterval * 1000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [autoSync, syncInterval, fetchData]);
 
   useEffect(() => {
     if (data.length > 0 && !selectedYear) {
@@ -525,13 +581,17 @@ export default function BeverageDashboard() {
                   Enterprise
                 </span>
               </div>
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex flex-wrap items-center gap-3 mt-1">
                 <p className="text-slate-400 text-xs font-medium">
                   Real-time beverage analytics & revenue engine {selectedYear ? `(พ.ศ. ${parseInt(selectedYear, 10) + 543})` : ''}
                 </p>
                 {loading ? (
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20 animate-pulse">
-                    <RefreshCw className="w-3 h-3 animate-spin" /> Syncing...
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Loading...
+                  </span>
+                ) : isSyncing ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-cyan-400 bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-cyan-500/20 animate-pulse">
+                    <Radio className="w-3 h-3 animate-spin" /> Syncing Live Data...
                   </span>
                 ) : error ? (
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/20">
@@ -539,7 +599,12 @@ export default function BeverageDashboard() {
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> {isLive ? 'Live Engine' : 'Offline'}
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> {isLive ? (autoSync ? `Live Sync (${syncInterval}s)` : 'Live (Manual)') : 'Offline'}
+                  </span>
+                )}
+                {lastSyncTime && (
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    (อัปเดต: {lastSyncTime})
                   </span>
                 )}
               </div>
@@ -548,6 +613,35 @@ export default function BeverageDashboard() {
 
           {/* CONTROLS */}
           <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            
+            {/* Real-time Sync Dropdown */}
+            <div className="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 text-xs shadow-inner">
+              <button
+                onClick={() => setAutoSync(!autoSync)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  autoSync 
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="เปิด/ปิดการอัปเดตข้อมูลอัตโนมัติ"
+              >
+                <Radio className={`w-3.5 h-3.5 ${autoSync ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
+                <span>{autoSync ? 'Auto' : 'Manual'}</span>
+              </button>
+              {autoSync && (
+                <select
+                  value={syncInterval}
+                  onChange={(e) => setSyncInterval(Number(e.target.value))}
+                  className="bg-transparent text-slate-300 text-xs pl-2 pr-1 py-1 focus:outline-none cursor-pointer font-mono font-bold"
+                  title="ความถี่ในการอัปเดต"
+                >
+                  <option value={15} className="bg-slate-950 text-slate-200">15s</option>
+                  <option value={30} className="bg-slate-950 text-slate-200">30s</option>
+                  <option value={60} className="bg-slate-950 text-slate-200">60s</option>
+                </select>
+              )}
+            </div>
+
             {/* Segmented Period Tabs */}
             <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 shadow-inner">
               {['day', 'month', 'year'].map((mode) => (
@@ -630,11 +724,11 @@ export default function BeverageDashboard() {
 
             {/* Refresh Button */}
             <button 
-              onClick={fetchData}
+              onClick={() => fetchData(false)}
               className="p-2 bg-slate-950/80 border border-slate-800/80 rounded-xl text-slate-400 hover:text-white hover:border-slate-700 transition-all shadow-sm active:scale-95"
-              title="รีเฟรชข้อมูล"
+              title="รีเฟรชข้อมูลทันที"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loading || isSyncing ? 'animate-spin text-indigo-400' : ''}`} />
             </button>
           </div>
         </header>
