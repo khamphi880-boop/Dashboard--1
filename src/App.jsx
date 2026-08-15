@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   AreaChart,
@@ -30,8 +31,6 @@ import {
   Sun,
   X,
   ArrowUpRight,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
@@ -48,10 +47,17 @@ const monthNamesThai = [
   'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
 ];
 
+// High-Performance In-Memory Parsing Cache
+const dateParseCache = new Map();
+
 const parseDateTime = (datetimeString) => {
   if (!datetimeString) return null;
   const str = String(datetimeString).trim();
   if (!str) return null;
+
+  if (dateParseCache.has(str)) {
+    return dateParseCache.get(str);
+  }
 
   let year = 0, month = 0, day = 0, hour = 0, minute = 0;
 
@@ -64,7 +70,9 @@ const parseDateTime = (datetimeString) => {
       hour = d.getHours();
       minute = d.getMinutes();
       if (year > 2400) year -= 543;
-      return buildParsedResult(year, month, day, hour, minute);
+      const res = buildParsedResult(year, month, day, hour, minute);
+      dateParseCache.set(str, res);
+      return res;
     }
   }
 
@@ -116,12 +124,15 @@ const parseDateTime = (datetimeString) => {
   }
 
   if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
+    dateParseCache.set(str, null);
     return null;
   }
 
   if (year > 2400) year -= 543;
 
-  return buildParsedResult(year, month, day, hour, minute);
+  const result = buildParsedResult(year, month, day, hour, minute);
+  dateParseCache.set(str, result);
+  return result;
 };
 
 const buildParsedResult = (year, month, day, hour, minute) => {
@@ -148,6 +159,11 @@ const buildParsedResult = (year, month, day, hour, minute) => {
   };
 };
 
+const formatDateForComparison = (datetimeString) => {
+  const parsed = parseDateTime(datetimeString);
+  return parsed ? parsed.isoDate : '';
+};
+
 const formatDateToBE = (datetimeString) => {
   const parsed = parseDateTime(datetimeString);
   if (!parsed) return datetimeString || '-';
@@ -155,7 +171,34 @@ const formatDateToBE = (datetimeString) => {
   return `${String(parsed.day).padStart(2, '0')}/${String(parsed.month).padStart(2, '0')}/${parsed.yearBE}${timeFormatted}`;
 };
 
+const normalizeOrder = (raw) => {
+  if (!raw || typeof raw !== 'object') return raw;
+  
+  const datetime = raw.datetime || raw.timestampStr || raw['วัน-เวลา'] || raw['เวลา'] || '';
+  const parsed = parseDateTime(datetime);
+
+  return {
+    ...raw,
+    datetime,
+    billId: raw.billId || raw.orderId || raw['รหัสบิล'] || raw['บิล'] || '',
+    customer: raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || raw['ลูกค้า'] || '',
+    items: raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '',
+    total: parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0,
+    payment: raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || raw['ชำระ'] || 'เงินสด',
+    status: raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '',
+    deliveryPoint: raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '',
+    address: raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '',
+    remark: raw.remark || raw.note || raw['หมายเหตุ'] || '',
+    _isoDate: parsed ? parsed.isoDate : '',
+    _isoMonth: parsed ? parsed.isoMonth : '',
+    _yearStr: parsed ? String(parsed.year) : '',
+    _formattedBE: formatDateToBE(datetime),
+  };
+};
+
+const avatarColorCache = new Map();
 const getAvatarColor = (name = '') => {
+  if (avatarColorCache.has(name)) return avatarColorCache.get(name);
   const colors = [
     'from-indigo-500 to-purple-500',
     'from-blue-500 to-cyan-500',
@@ -167,58 +210,9 @@ const getAvatarColor = (name = '') => {
   for (let i = 0; i < name.length; i++) {
     charCode += name.charCodeAt(i);
   }
-  return colors[charCode % colors.length];
-};
-
-const normalizeOrder = (raw) => {
-  if (!raw || typeof raw !== 'object') return raw;
-  
-  const datetime = raw.datetime || raw.timestampStr || raw['วัน-เวลา'] || raw['เวลา'] || '';
-  const customer = raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || raw['ลูกค้า'] || '';
-  const status = raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '';
-  const items = raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '';
-  const total = parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0;
-
-  const parsedDate = parseDateTime(datetime);
-  const isCanceled = (status || '').includes('ยกเลิก') || (status || '').toLowerCase().includes('cancel');
-  const cleanStatus = (status || '').replace(/[🔴🟢]/g, '').trim() || 'สำเร็จ';
-
-  const itemsArray = items ? String(items).split(/\n|,/).map((s) => s.trim()).filter(Boolean) : [];
-  let itemCount = 0;
-  itemsArray.forEach((line) => {
-    const match = line.match(/^(\d+)\s*x/i) || line.match(/x\s*(\d+)/i);
-    if (match && match[1]) {
-      itemCount += parseInt(match[1], 10);
-    } else {
-      itemCount += 1;
-    }
-  });
-
-  return {
-    ...raw,
-    datetime,
-    billId: String(raw.billId || raw.orderId || raw['รหัสบิล'] || raw['บิล'] || ''),
-    customer,
-    items,
-    itemsArray,
-    itemCount: itemCount > 0 ? itemCount : (items ? 1 : 0),
-    total,
-    payment: raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || raw['ชำระ'] || 'เงินสด',
-    status,
-    cleanStatus,
-    isCanceled,
-    avatarColor: getAvatarColor(customer),
-    deliveryPoint: raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '',
-    address: raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '',
-    remark: raw.remark || raw.note || raw['หมายเหตุ'] || '',
-    parsedDate,
-    isoDate: parsedDate ? parsedDate.isoDate : '',
-    isoMonth: parsedDate ? parsedDate.isoMonth : '',
-    isoYear: parsedDate ? String(parsedDate.year) : '',
-    displayDateBE: parsedDate
-      ? `${String(parsedDate.day).padStart(2, '0')}/${String(parsedDate.month).padStart(2, '0')}/${parsedDate.yearBE}${parsedDate.timeStr !== '00:00' ? ` ${parsedDate.timeStr}` : ''}`
-      : (datetime || '-')
-  };
+  const color = colors[charCode % colors.length];
+  avatarColorCache.set(name, color);
+  return color;
 };
 
 export default function BeverageDashboard() {
@@ -226,7 +220,6 @@ export default function BeverageDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const [filterMode, setFilterMode] = useState('year');
   const [selectedDate, setSelectedDate] = useState('');
@@ -236,19 +229,8 @@ export default function BeverageDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const PAGE_SIZE = 20;
-
   const DATA_URL =
     'https://script.google.com/macros/s/AKfycbzWpWDAZsAh1IrHn5L_7qxVyeepCods90zfR1bPqL1WklWDfk69mrf3-jCt6YSxbB09/exec';
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(searchTerm);
-      setCurrentPage(1);
-    }, 250);
-    return () => clearTimeout(handler);
-  }, [searchTerm]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -271,10 +253,9 @@ export default function BeverageDashboard() {
       }
 
       if (parsedData.length > 0) {
-        let normalizedData = [];
         if (Array.isArray(parsedData[0])) {
           const headers = parsedData[0];
-          normalizedData = parsedData.slice(1).map((row) => {
+          const mappedData = parsedData.slice(1).map((row) => {
             const obj = {};
             headers.forEach((header, index) => {
               const cleanHeader = String(header || '').trim();
@@ -292,20 +273,12 @@ export default function BeverageDashboard() {
             });
             return normalizeOrder(obj);
           });
+          setData(mappedData);
+          setIsLive(true);
         } else {
-          normalizedData = parsedData.map(normalizeOrder);
-        }
-
-        setData(normalizedData);
-        setIsLive(true);
-
-        if (!selectedYear) {
-          const availableYearsList = Array.from(
-            new Set(normalizedData.map((item) => item.isoYear).filter(Boolean))
-          ).sort();
-          if (availableYearsList.length > 0) {
-            setSelectedYear(availableYearsList[availableYearsList.length - 1]);
-          }
+          const normalizedData = parsedData.map(normalizeOrder);
+          setData(normalizedData);
+          setIsLive(true);
         }
       } else {
         setData([]);
@@ -326,8 +299,25 @@ export default function BeverageDashboard() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    if (data.length > 0 && !selectedYear) {
+      const years = data
+        .map((item) => item._yearStr || formatDateForComparison(item.datetime).split('-')[0])
+        .filter(Boolean)
+        .sort();
+      if (years.length > 0) {
+        const latestYear = years[years.length - 1];
+        setSelectedYear(latestYear);
+      }
+    }
+  }, [data, selectedYear]);
+
   const availableYears = useMemo(() => {
-    const years = new Set(data.map((item) => item.isoYear).filter(Boolean));
+    const years = new Set(
+      data
+        .map((item) => item._yearStr || formatDateForComparison(item.datetime).split('-')[0])
+        .filter(Boolean)
+    );
     if (selectedYear) years.add(selectedYear);
     return Array.from(years).sort().reverse();
   }, [data, selectedYear]);
@@ -336,7 +326,7 @@ export default function BeverageDashboard() {
     if (!data || data.length === 0) return '';
     let maxDate = '';
     for (let i = 0; i < data.length; i++) {
-      const iso = data[i].isoDate;
+      const iso = data[i]._isoDate || formatDateForComparison(data[i].datetime);
       if (iso && iso > maxDate) maxDate = iso;
     }
     return maxDate;
@@ -351,56 +341,74 @@ export default function BeverageDashboard() {
 
     const getOrdersForIsoDate = (isoDate) => {
       return data.filter((item) => {
-        if (hideCanceled && item.isCanceled) return false;
-        return item.isoDate === isoDate;
+        const status = item.status || '';
+        const isCanceled = status.includes('ยกเลิก') || status.toLowerCase().includes('cancel');
+        if (hideCanceled && isCanceled) return false;
+
+        const dtIso = item._isoDate || formatDateForComparison(item.datetime);
+        return dtIso === isoDate;
       });
     };
 
     let targetIso = todayIso;
     let isFallbackToLatest = false;
-    let targetOrders = getOrdersForIsoDate(todayIso);
+    let todayOrders = getOrdersForIsoDate(todayIso);
 
-    if (targetOrders.length === 0 && latestAvailableDate) {
+    if (todayOrders.length === 0 && latestAvailableDate) {
       targetIso = latestAvailableDate;
-      targetOrders = getOrdersForIsoDate(latestAvailableDate);
+      todayOrders = getOrdersForIsoDate(latestAvailableDate);
       isFallbackToLatest = true;
     }
 
-    const todaySales = targetOrders.reduce((sum, item) => sum + (item.total || 0), 0);
+    const todaySales = todayOrders.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
     return { 
       todaySales, 
-      todayCount: targetOrders.length,
+      todayCount: todayOrders.length,
       targetIso,
       isFallbackToLatest
     };
   }, [data, hideCanceled, latestAvailableDate]);
 
   const displayData = useMemo(() => {
-    const search = debouncedSearch.toLowerCase().trim();
+    let filtered = data;
 
-    return data.filter((item) => {
-      if (hideCanceled && item.isCanceled) return false;
+    if (filterMode === 'day' && selectedDate) {
+      filtered = filtered.filter(
+        (item) => (item._isoDate || formatDateForComparison(item.datetime)) === selectedDate
+      );
+    } else if (filterMode === 'month' && selectedMonth) {
+      filtered = filtered.filter((item) =>
+        (item._isoDate || formatDateForComparison(item.datetime)).startsWith(selectedMonth)
+      );
+    } else if (filterMode === 'year' && selectedYear) {
+      filtered = filtered.filter((item) =>
+        (item._isoDate || formatDateForComparison(item.datetime)).startsWith(selectedYear)
+      );
+    }
 
-      if (filterMode === 'day' && selectedDate) {
-        if (item.isoDate !== selectedDate) return false;
-      } else if (filterMode === 'month' && selectedMonth) {
-        if (!item.isoDate.startsWith(selectedMonth)) return false;
-      } else if (filterMode === 'year' && selectedYear) {
-        if (!item.isoDate.startsWith(selectedYear)) return false;
-      }
+    if (searchTerm) {
+      const lowerCaseSearch = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (item) =>
+          (item.customer?.toLowerCase() || '').includes(lowerCaseSearch) ||
+          (item.billId?.toLowerCase() || '').includes(lowerCaseSearch) ||
+          (item.address?.toLowerCase() || '').includes(lowerCaseSearch)
+      );
+    }
 
-      if (search) {
-        const matchCustomer = item.customer && item.customer.toLowerCase().includes(search);
-        const matchBill = item.billId && item.billId.toLowerCase().includes(search);
-        const matchAddress = item.address && item.address.toLowerCase().includes(search);
-        if (!matchCustomer && !matchBill && !matchAddress) return false;
-      }
+    if (hideCanceled) {
+      filtered = filtered.filter((item) => {
+        const status = item.status || '';
+        return (
+          !status.includes('ยกเลิก') && !status.toLowerCase().includes('cancel')
+        );
+      });
+    }
 
-      return true;
-    });
+    return filtered;
   }, [
     data,
-    debouncedSearch,
+    searchTerm,
     selectedDate,
     selectedMonth,
     selectedYear,
@@ -415,8 +423,22 @@ export default function BeverageDashboard() {
 
     for (let i = 0; i < totalOrders; i++) {
       const order = displayData[i];
-      totalSales += order.total || 0;
-      totalItems += order.itemCount || 0;
+      totalSales += parseFloat(order.total) || 0;
+
+      const itemsStr = order.items;
+      if (itemsStr) {
+        const lines = String(itemsStr).split(/\n|,/);
+        for (let j = 0; j < lines.length; j++) {
+          const trimmed = lines[j].trim();
+          if (!trimmed) continue;
+          const match = trimmed.match(/^(\d+)\s*x/i) || trimmed.match(/x\s*(\d+)/i);
+          if (match && match[1]) {
+            totalItems += parseInt(match[1], 10);
+          } else {
+            totalItems += 1;
+          }
+        }
+      }
     }
 
     const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
@@ -429,11 +451,12 @@ export default function BeverageDashboard() {
 
     for (let i = 0; i < displayData.length; i++) {
       const item = displayData[i];
-      
+
       const pm = item.payment || 'เงินสด';
       paymentMap[pm] = (paymentMap[pm] || 0) + 1;
 
-      const parsed = item.parsedDate;
+      if (!item.datetime) continue;
+      const parsed = parseDateTime(item.datetime);
       if (!parsed) continue;
 
       let sortKey = '';
@@ -456,7 +479,7 @@ export default function BeverageDashboard() {
       if (!trendMap[sortKey]) {
         trendMap[sortKey] = { time: displayKey, sales: 0 };
       }
-      trendMap[sortKey].sales += item.total || 0;
+      trendMap[sortKey].sales += parseFloat(item.total) || 0;
     }
 
     const paymentData = Object.keys(paymentMap).map((key) => ({
@@ -471,17 +494,6 @@ export default function BeverageDashboard() {
     return { paymentData, trendData };
   }, [displayData, filterMode, selectedDate, selectedMonth, selectedYear]);
 
-  const totalPages = Math.ceil(displayData.length / PAGE_SIZE) || 1;
-  const paginatedOrders = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return displayData.slice(start, start + PAGE_SIZE);
-  }, [displayData, currentPage]);
-
-  const handleFilterModeChange = (mode) => {
-    setFilterMode(mode);
-    setCurrentPage(1);
-  };
-
   let chartTitle = 'แนวโน้มยอดขายรายวัน (Daily Sales Trend)';
   if (filterMode === 'day' && selectedDate)
     chartTitle = `แนวโน้มยอดขายรายชั่วโมง (วันที่ ${formatDateToBE(selectedDate)})`;
@@ -490,11 +502,13 @@ export default function BeverageDashboard() {
 
   return (
     <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white p-4 sm:p-6 lg:p-8">
+      {/* Background Glow Overlay */}
       <div className="fixed top-0 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[128px] pointer-events-none" />
       <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-[128px] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto space-y-8 relative z-10">
         
+        {/* HEADER SECTION */}
         <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 p-0.5 shadow-lg shadow-indigo-500/20">
@@ -532,12 +546,14 @@ export default function BeverageDashboard() {
             </div>
           </div>
 
+          {/* CONTROLS */}
           <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            {/* Segmented Period Tabs */}
             <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 shadow-inner">
               {['day', 'month', 'year'].map((mode) => (
                 <button
                   key={mode}
-                  onClick={() => handleFilterModeChange(mode)}
+                  onClick={() => setFilterMode(mode)}
                   className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 capitalize ${
                     filterMode === mode
                       ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-md shadow-indigo-500/25'
@@ -549,6 +565,7 @@ export default function BeverageDashboard() {
               ))}
             </div>
 
+            {/* Date Inputs */}
             <div className="relative flex-1 sm:flex-none min-w-[150px]">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                 <Calendar className="w-4 h-4" />
@@ -557,10 +574,7 @@ export default function BeverageDashboard() {
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={(e) => {
-                    setSelectedDate(e.target.value);
-                    setCurrentPage(1);
-                  }}
+                  onChange={(e) => setSelectedDate(e.target.value)}
                   className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
                 />
               )}
@@ -568,20 +582,14 @@ export default function BeverageDashboard() {
                 <input
                   type="month"
                   value={selectedMonth}
-                  onChange={(e) => {
-                    setSelectedMonth(e.target.value);
-                    setCurrentPage(1);
-                  }}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
                   className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
                 />
               )}
               {filterMode === 'year' && (
                 <select
                   value={selectedYear}
-                  onChange={(e) => {
-                    setSelectedYear(e.target.value);
-                    setCurrentPage(1);
-                  }}
+                  onChange={(e) => setSelectedYear(e.target.value)}
                   className="w-full bg-slate-950/80 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer font-mono"
                 >
                   <option value="">ทั้งหมด (All Years)</option>
@@ -600,7 +608,6 @@ export default function BeverageDashboard() {
                     if (filterMode === 'day') setSelectedDate('');
                     if (filterMode === 'month') setSelectedMonth('');
                     if (filterMode === 'year') setSelectedYear('');
-                    setCurrentPage(1);
                   }}
                   className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-500 hover:text-slate-300"
                 >
@@ -609,20 +616,19 @@ export default function BeverageDashboard() {
               )}
             </div>
 
+            {/* Toggle Canceled */}
             <label className="flex items-center gap-2 cursor-pointer bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800/80 text-xs font-medium text-slate-300 hover:border-slate-700 transition-all">
               <input
                 type="checkbox"
                 checked={hideCanceled}
-                onChange={(e) => {
-                  setHideCanceled(e.target.checked);
-                  setCurrentPage(1);
-                }}
+                onChange={(e) => setHideCanceled(e.target.checked)}
                 className="sr-only peer"
               />
               <div className="w-8 h-4 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
               <span>ซ่อนรายการยกเลิก</span>
             </label>
 
+            {/* Refresh Button */}
             <button 
               onClick={fetchData}
               className="p-2 bg-slate-950/80 border border-slate-800/80 rounded-xl text-slate-400 hover:text-white hover:border-slate-700 transition-all shadow-sm active:scale-95"
@@ -633,6 +639,7 @@ export default function BeverageDashboard() {
           </div>
         </header>
 
+        {/* NOTIFICATION BANNER */}
         {data.length > 0 && displayData.length === 0 && filterMode === 'day' && selectedDate && (
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 text-amber-300 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-lg backdrop-blur-md">
             <div className="flex items-center gap-2.5">
@@ -646,10 +653,7 @@ export default function BeverageDashboard() {
             </div>
             {latestAvailableDate && (
               <button
-                onClick={() => {
-                  setSelectedDate(latestAvailableDate);
-                  setCurrentPage(1);
-                }}
+                onClick={() => setSelectedDate(latestAvailableDate)}
                 className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-md flex items-center gap-1"
               >
                 สลับไปวันที่ล่าสุด <ArrowUpRight className="w-3.5 h-3.5" />
@@ -658,6 +662,7 @@ export default function BeverageDashboard() {
           </div>
         )}
 
+        {/* METRICS GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
           <KpiCard
             title={
@@ -705,7 +710,10 @@ export default function BeverageDashboard() {
           />
         </div>
 
+        {/* CHARTS SECTION */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Main Area Chart */}
           <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl lg:col-span-2">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -738,7 +746,6 @@ export default function BeverageDashboard() {
                       strokeWidth={3}
                       fillOpacity={1}
                       fill="url(#salesGradient)"
-                      isAnimationActive={false}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -751,6 +758,7 @@ export default function BeverageDashboard() {
             </div>
           </div>
 
+          {/* Donut Payment Chart */}
           <div className="bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 shadow-2xl flex flex-col justify-between">
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2 mb-1">
@@ -772,7 +780,6 @@ export default function BeverageDashboard() {
                       outerRadius={85}
                       paddingAngle={6}
                       dataKey="value"
-                      isAnimationActive={false}
                     >
                       {chartsData.paymentData.map((entry, index) => (
                         <Cell
@@ -790,6 +797,7 @@ export default function BeverageDashboard() {
               )}
             </div>
 
+            {/* Custom Payment Legend */}
             <div className="space-y-2">
               {chartsData.paymentData.map((item, idx) => (
                 <div key={idx} className="flex items-center justify-between text-xs bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-800/50">
@@ -807,16 +815,16 @@ export default function BeverageDashboard() {
           </div>
         </div>
 
+        {/* ORDERS TABLE SECTION */}
         <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden">
+          
           <div className="p-6 border-b border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-400" />
                 รายการออเดอร์ล่าสุด (Live Transactions)
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                แสดง {displayData.length > 0 ? (currentPage - 1) * PAGE_SIZE + 1 : 0} - {Math.min(currentPage * PAGE_SIZE, displayData.length)} จากทั้งหมด {displayData.length} รายการ
-              </p>
+              <p className="text-xs text-slate-400 mt-0.5">แสดง {displayData.length} รายการที่ตรงตามเงื่อนไข</p>
             </div>
 
             <div className="relative w-full sm:w-72">
@@ -853,69 +861,71 @@ export default function BeverageDashboard() {
                       </div>
                     </td>
                   </tr>
-                ) : paginatedOrders.length > 0 ? (
-                  paginatedOrders.map((order, index) => (
-                    <tr
-                      key={order.billId || index}
-                      className="hover:bg-slate-800/30 transition-colors group"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap font-mono text-slate-400">
-                        {order.displayDateBE}
-                      </td>
-                      <td className="px-6 py-4 font-mono font-medium text-indigo-400">
-                        #{order.billId}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full bg-gradient-to-tr ${order.avatarColor} flex items-center justify-center font-bold text-white shadow-md`}>
-                            {order.customer ? order.customer.charAt(0).toUpperCase() : '?'}
+                ) : displayData.length > 0 ? (
+                  displayData.map((order, index) => {
+                    const isCanceled =
+                      (order.status || '').includes('ยกเลิก') ||
+                      (order.status || '').toLowerCase().includes('cancel');
+
+                    return (
+                      <tr
+                        key={order.billId || index}
+                        className="hover:bg-slate-800/30 transition-colors group"
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-slate-400">
+                          {order._formattedBE || formatDateToBE(order.datetime)}
+                        </td>
+                        <td className="px-6 py-4 font-mono font-medium text-indigo-400">
+                          #{order.billId}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full bg-gradient-to-tr ${getAvatarColor(order.customer)} flex items-center justify-center font-bold text-white shadow-md`}>
+                              {order.customer ? order.customer.charAt(0).toUpperCase() : '?'}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-200">{order.customer || 'ลูกค้าทั่วไป'}</p>
+                              <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3 text-slate-600" /> {order.address || 'รับที่ร้าน'}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-semibold text-slate-200">{order.customer || 'ลูกค้าทั่วไป'}</p>
-                            <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                              <MapPin className="w-3 h-3 text-slate-600" /> {order.address || 'รับที่ร้าน'}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1 max-w-xs">
-                          {order.itemsArray.length > 0 ? (
-                            order.itemsArray.map((item, i) => (
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {String(order.items || '-').split(/\n|,/).map((item, i) => (
                               <span
                                 key={i}
                                 className="bg-slate-950/80 border border-slate-800 text-slate-300 text-[11px] px-2 py-0.5 rounded-md truncate max-w-[200px]"
-                                title={item}
+                                title={item.trim()}
                               >
-                                {item}
+                                {item.trim()}
                               </span>
-                            ))
-                          ) : (
-                            <span className="text-slate-500">-</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right font-mono font-bold text-emerald-400 text-sm">
-                        ฿{order.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border shadow-sm ${
-                            order.isCanceled
-                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-rose-500/10'
-                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-emerald-500/10'
-                          }`}
-                        >
-                          {order.isCanceled ? (
-                            <AlertCircle className="w-3 h-3" />
-                          ) : (
-                            <CheckCircle2 className="w-3 h-3" />
-                          )}
-                          {order.cleanStatus}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right font-mono font-bold text-emerald-400 text-sm">
+                          ฿{parseFloat(order.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border shadow-sm ${
+                              isCanceled
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-rose-500/10'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-emerald-500/10'
+                            }`}
+                          >
+                            {isCanceled ? (
+                              <AlertCircle className="w-3 h-3" />
+                            ) : (
+                              <CheckCircle2 className="w-3 h-3" />
+                            )}
+                            {(order.status || '').replace(/[🔴🟢]/g, '').trim() || 'สำเร็จ'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
@@ -926,32 +936,6 @@ export default function BeverageDashboard() {
               </tbody>
             </table>
           </div>
-
-          {totalPages > 1 && (
-            <div className="p-4 border-t border-slate-800/80 flex items-center justify-between bg-slate-950/40 text-xs">
-              <span className="text-slate-400">
-                หน้า <strong className="text-white font-mono">{currentPage}</strong> จาก <strong className="text-white font-mono">{totalPages}</strong>
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="p-1.5 rounded-lg border border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                  title="หน้าก่อนหน้า"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="p-1.5 rounded-lg border border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                  title="หน้าถัดไป"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
       </div>
@@ -959,7 +943,8 @@ export default function BeverageDashboard() {
   );
 }
 
-const KpiCard = React.memo(function KpiCard({ title, value, icon, glow, gradient, badge }) {
+// KPI CARD COMPONENT WITH AMBIENT GLOW
+function KpiCard({ title, value, icon, glow, gradient, badge }) {
   return (
     <div className="relative group overflow-hidden bg-slate-900/60 backdrop-blur-xl p-6 rounded-3xl border border-slate-800/80 hover:border-slate-700/80 transition-all duration-300 shadow-xl">
       <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full blur-2xl opacity-15 transition-opacity group-hover:opacity-30 ${glow}`} />
@@ -980,23 +965,25 @@ const KpiCard = React.memo(function KpiCard({ title, value, icon, glow, gradient
       </div>
     </div>
   );
-});
+}
 
-const CustomTooltip = React.memo(({ active, payload, label }) => {
+// CUSTOM TOOLTIP FOR AREA CHART
+const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 p-3 rounded-2xl shadow-2xl font-mono">
         <p className="text-[11px] text-slate-400 mb-1">{label}</p>
         <p className="text-sm font-bold text-indigo-400">
-          ฿{Number(payload[0].value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          ฿{Number(payload[0].value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
         </p>
       </div>
     );
   }
   return null;
-});
+};
 
-const CustomPieTooltip = React.memo(({ active, payload }) => {
+// CUSTOM TOOLTIP FOR PIE CHART
+const CustomPieTooltip = ({ active, payload }) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-slate-950/90 backdrop-blur-md border border-slate-800 px-3 py-2 rounded-xl shadow-2xl text-xs">
@@ -1006,4 +993,4 @@ const CustomPieTooltip = React.memo(({ active, payload }) => {
     );
   }
   return null;
-});
+};
