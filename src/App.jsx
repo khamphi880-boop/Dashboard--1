@@ -31,6 +31,7 @@ import {
   X,
   ArrowUpRight,
   Radio,
+  Command,
 } from 'lucide-react';
 
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
@@ -175,20 +176,34 @@ const normalizeOrder = (raw) => {
   if (!raw || typeof raw !== 'object') return raw;
   
   const datetime = raw.datetime || raw.timestampStr || raw['วัน-เวลา'] || raw['เวลา'] || '';
+  const billId = String(raw.billId || raw.orderId || raw['รหัสบิล'] || raw['บิล'] || '');
+  const customer = raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || raw['ลูกค้า'] || '';
+  const items = raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '';
+  const total = parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0;
+  const payment = raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || raw['ชำระ'] || 'เงินสด';
+  const status = raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '';
+  const deliveryPoint = raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '';
+  const address = raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '';
+  const remark = raw.remark || raw.note || raw['หมายเหตุ'] || '';
+
   const parsed = parseDateTime(datetime);
+
+  // Pre-index for Ultra-Fast Search
+  const searchIndex = `${billId} ${customer} ${items} ${payment} ${status} ${deliveryPoint} ${address} ${remark} ฿${total}`.toLowerCase();
 
   return {
     ...raw,
     datetime,
-    billId: raw.billId || raw.orderId || raw['รหัสบิล'] || raw['บิล'] || '',
-    customer: raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || raw['ลูกค้า'] || '',
-    items: raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '',
-    total: parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0,
-    payment: raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || raw['ชำระ'] || 'เงินสด',
-    status: raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '',
-    deliveryPoint: raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '',
-    address: raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '',
-    remark: raw.remark || raw.note || raw['หมายเหตุ'] || '',
+    billId,
+    customer,
+    items,
+    total,
+    payment,
+    status,
+    deliveryPoint,
+    address,
+    remark,
+    _searchIndex: searchIndex,
     _isoDate: parsed ? parsed.isoDate : '',
     _isoMonth: parsed ? parsed.isoMonth : '',
     _yearStr: parsed ? String(parsed.year) : '',
@@ -221,7 +236,10 @@ export default function BeverageDashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [error, setError] = useState(null);
+  
+  // Search State
   const [searchTerm, setSearchTerm] = useState('');
+  const searchInputRef = useRef(null);
 
   const [filterMode, setFilterMode] = useState('year');
   const [selectedDate, setSelectedDate] = useState('');
@@ -233,12 +251,33 @@ export default function BeverageDashboard() {
 
   // Real-time Controls
   const [autoSync, setAutoSync] = useState(true);
-  const [syncInterval, setSyncInterval] = useState(30); // วินาที (15, 30, 60)
+  const [syncInterval, setSyncInterval] = useState(30);
 
   const isFetchingRef = useRef(false);
 
   const DATA_URL =
     'https://script.google.com/macros/s/AKfycbzWpWDAZsAh1IrHn5L_7qxVyeepCods90zfR1bPqL1WklWDfk69mrf3-jCt6YSxbB09/exec';
+
+  // Global Keyboard Shortcut: '/' or 'Ctrl+K' to focus Search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (
+        e.key === '/' &&
+        document.activeElement !== searchInputRef.current &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'SELECT'
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const fetchData = useCallback(async (isBackground = false) => {
     if (isFetchingRef.current) return;
@@ -325,17 +364,14 @@ export default function BeverageDashboard() {
     }
   }, [DATA_URL]);
 
-  // Initial Fetch
   useEffect(() => {
     fetchData(false);
   }, [fetchData]);
 
-  // Real-time Background Polling Engine with Visibility Detection
   useEffect(() => {
     if (!autoSync || syncInterval <= 0) return;
 
     const intervalId = setInterval(() => {
-      // ตรวจสอบว่าผู้ใช้กำลังเปิดดูหน้านี้อยู่หรือไม่ (ถ้าพับหน้าจออยู่จะไม่ยิง API เปล่าประโยชน์)
       if (document.visibilityState === 'visible') {
         fetchData(true);
       }
@@ -425,6 +461,7 @@ export default function BeverageDashboard() {
     };
   }, [data, hideCanceled, latestAvailableDate]);
 
+  // Enhanced Universal Search & Filter Engine
   const displayData = useMemo(() => {
     let filtered = data;
 
@@ -443,13 +480,17 @@ export default function BeverageDashboard() {
     }
 
     if (searchTerm) {
-      const lowerCaseSearch = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (item) =>
-          (item.customer?.toLowerCase() || '').includes(lowerCaseSearch) ||
-          (item.billId?.toLowerCase() || '').includes(lowerCaseSearch) ||
-          (item.address?.toLowerCase() || '').includes(lowerCaseSearch)
-      );
+      const searchKeywords = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      filtered = filtered.filter((item) => {
+        const searchIndex = item._searchIndex || '';
+        // Multi-keyword check: every keyword must match somewhere in the order
+        for (let i = 0; i < searchKeywords.length; i++) {
+          if (!searchIndex.includes(searchKeywords[i])) {
+            return false;
+          }
+        }
+        return true;
+      });
     }
 
     if (hideCanceled) {
@@ -556,6 +597,8 @@ export default function BeverageDashboard() {
   if (filterMode === 'year' && selectedYear)
     chartTitle = `แนวโน้มยอดขายรายเดือน (ประจำปี พ.ศ. ${parseInt(selectedYear, 10) + 543})`;
 
+  const quickFilterOptions = ['โอนพร้อมเพย์', 'เงินสด', 'ไทยช่วยไทยพลัส'];
+
   return (
     <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white p-4 sm:p-6 lg:p-8">
       {/* Background Glow Overlay */}
@@ -613,7 +656,6 @@ export default function BeverageDashboard() {
 
           {/* CONTROLS */}
           <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-            
             {/* Real-time Sync Dropdown */}
             <div className="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 text-xs shadow-inner">
               <button
@@ -912,24 +954,75 @@ export default function BeverageDashboard() {
         {/* ORDERS TABLE SECTION */}
         <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden">
           
-          <div className="p-6 border-b border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          {/* Enhanced Search & Table Header */}
+          <div className="p-6 border-b border-slate-800/80 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Zap className="w-4 h-4 text-amber-400" />
-                รายการออเดอร์ล่าสุด (Live Transactions)
-              </h2>
+                <h2 className="text-base font-bold text-white">
+                  รายการออเดอร์ล่าสุด (Live Transactions)
+                </h2>
+                {searchTerm && (
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[11px] font-mono animate-fade-in">
+                    พบ {displayData.length} รายการ
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">แสดง {displayData.length} รายการที่ตรงตามเงื่อนไข</p>
             </div>
 
-            <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
-                placeholder="ค้นหาชื่อลูกค้า, รหัสบิล, ที่อยู่..."
-                className="w-full bg-slate-950/90 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            {/* Enhanced Smart Search Box */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+              
+              {/* Quick Search Chips */}
+              <div className="hidden xl:flex items-center gap-1.5">
+                {quickFilterOptions.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => setSearchTerm(searchTerm === tag ? '' : tag)}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-medium transition-all ${
+                      searchTerm === tag
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-500'
+                        : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Input with Keyboard Shortcut & Clear Icon */}
+              <div className="relative w-full sm:w-80 group">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 transition-colors group-focus-within:text-indigo-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="ค้นหาชื่อ, เมนู, รหัสบิล, ช่องทางชำระ..."
+                  className="w-full bg-slate-950/90 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-14 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                
+                {/* Clear Button or Keyboard Shortcut Badge */}
+                <div className="absolute right-2.5 top-2 flex items-center">
+                  {searchTerm ? (
+                    <button
+                      onClick={() => {
+                        setSearchTerm('');
+                        searchInputRef.current?.focus();
+                      }}
+                      className="p-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
+                      title="ล้างคำค้นหา (Clear)"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <span className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-[10px] font-mono text-slate-400 pointer-events-none">
+                      <Command className="w-2.5 h-2.5" /> K
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1023,7 +1116,18 @@ export default function BeverageDashboard() {
                 ) : (
                   <tr>
                     <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
-                      ไม่พบข้อมูลรายการออเดอร์ตามเงื่อนไขที่เลือก
+                      <div className="flex flex-col items-center gap-2">
+                        <Search className="w-6 h-6 text-slate-600" />
+                        <span>ไม่พบข้อมูลรายการออเดอร์ตามเงื่อนไขที่เลือก</span>
+                        {searchTerm && (
+                          <button
+                            onClick={() => setSearchTerm('')}
+                            className="text-xs text-indigo-400 hover:text-indigo-300 underline mt-1"
+                          >
+                            ล้างคำค้นหา "{searchTerm}"
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}
