@@ -35,6 +35,7 @@ import {
   ChevronRight,
   Search,
   LayoutDashboard,
+  FileText,
 } from 'lucide-react';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
@@ -182,8 +183,8 @@ export default function BeverageDashboard() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // [MODIFIED] แยกแท็บหน้าหลัก (dashboard) และหน้าค้นหาออเดอร์ (search)
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // [MODIFIED] เมนูสลับหน้า: 'dashboard' (ภาพรวม & กราฟ) หรือ 'orders' (ค้นหา & ตารางออเดอร์)
+  const [currentView, setCurrentView] = useState('dashboard');
 
   // Use deferred value for smooth UI input typing
   const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -283,7 +284,7 @@ export default function BeverageDashboard() {
     selectedYear,
     filterMode,
     hideCanceled,
-    activeTab,
+    currentView,
   ]);
 
   // Generate list of available years dynamically
@@ -344,7 +345,7 @@ export default function BeverageDashboard() {
         return false;
       }
 
-      // 3. Filter by Search Term (Active mainly in Search Tab)
+      // 3. Filter by Search Term
       if (lowerSearch && !item._searchIndex.includes(lowerSearch)) {
         return false;
       }
@@ -449,60 +450,93 @@ export default function BeverageDashboard() {
     chartTitle = 'แนวโน้มยอดขายรายเดือน (Monthly Sales Trend)';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-3 sm:p-6 md:p-8 font-sans">
+    <div
+      className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans"
+      style={{ touchAction: 'manipulation' }}
+    >
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header Section */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <span className="text-3xl">🥤</span> Beverage Shop Dashboard
-            </h1>
-            <div className="flex items-center gap-3 mt-2">
-              <p className="text-slate-500 text-sm">
-                Real-time overview of daily sales and orders
-              </p>
+        <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full lg:w-auto gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <span className="text-3xl">🥤</span> Beverage Shop Dashboard
+              </h1>
+              <div className="flex items-center gap-3 mt-2">
+                <p className="text-slate-500 text-sm">
+                  Real-time overview of daily sales and orders
+                </p>
 
-              {/* Status Indicator */}
-              {loading ? (
-                <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
-                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Syncing...
-                </span>
-              ) : error ? (
-                <span className="text-xs px-2 py-1 rounded-full border bg-red-50 text-red-600 border-red-200">
-                  🔴 {error}
-                </span>
-              ) : (
-                <span
-                  className={`text-xs px-2 py-1 rounded-full border ${
-                    isLive
-                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                      : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  {isLive ? '🟢 Live Data' : '⚪ Waiting for Data'}
-                </span>
-              )}
+                {/* Status Indicator */}
+                {loading ? (
+                  <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
+                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Syncing...
+                  </span>
+                ) : error ? (
+                  <span className="text-xs px-2 py-1 rounded-full border bg-red-50 text-red-600 border-red-200">
+                    🔴 {error}
+                  </span>
+                ) : (
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full border ${
+                      isLive
+                        ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                        : 'bg-slate-50 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {isLive ? '🟢 Live Data' : '⚪ Waiting for Data'}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* [MODIFIED] แท็บสลับหน้าสไตล์ Clean Pill Button สวยงามเหมือนเดิม */}
+            <div className="flex bg-slate-100 p-1 rounded-xl text-sm self-stretch sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setCurrentView('dashboard')}
+                className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-medium transition-all ${
+                  currentView === 'dashboard'
+                    ? 'bg-white text-indigo-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LayoutDashboard size={16} />
+                ภาพรวม (Dashboard)
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentView('orders')}
+                className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-medium transition-all ${
+                  currentView === 'orders'
+                    ? 'bg-white text-indigo-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Search size={16} />
+                ค้นหาออเดอร์ (Search)
+              </button>
             </div>
           </div>
 
           {/* Controls Wrapper */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
             {/* Period Filter Toggle */}
             <div className="flex bg-slate-100 p-1 rounded-lg text-sm w-full sm:w-auto">
               <button
@@ -540,7 +574,7 @@ export default function BeverageDashboard() {
               </button>
             </div>
 
-            {/* [MODIFIED] Dynamic Date Picker - ปรับ font ขนาด 16px (text-base) บนมือถือเพื่อกัน Safari ซูมขยาย */}
+            {/* [MODIFIED] Dynamic Date Picker Input - ปรับขนาดฟอนต์ 16px บน Mobile กันขยายจอ */}
             <div className="relative w-full sm:w-auto min-w-[160px]">
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                 <Calendar size={18} />
@@ -551,7 +585,7 @@ export default function BeverageDashboard() {
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2 shadow-sm transition-all"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
                 />
               )}
 
@@ -560,7 +594,7 @@ export default function BeverageDashboard() {
                   type="month"
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2 shadow-sm transition-all"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
                 />
               )}
 
@@ -568,7 +602,7 @@ export default function BeverageDashboard() {
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2 shadow-sm transition-all appearance-none cursor-pointer"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all appearance-none cursor-pointer"
                 >
                   <option value="">เลือกปี (All Years)</option>
                   {availableYears.map((year) => (
@@ -610,7 +644,7 @@ export default function BeverageDashboard() {
               )}
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer bg-white px-3 py-2 rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors shrink-0">
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer bg-white px-3 py-2.5 rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors shrink-0">
               <input
                 type="checkbox"
                 checked={hideCanceled}
@@ -621,39 +655,6 @@ export default function BeverageDashboard() {
             </label>
           </div>
         </header>
-
-        {/* [MODIFIED] Navigation Bar สำหรับสลับหน้าระหว่างภาพรวม Dashboard และหน้าค้นหาออเดอร์ */}
-        <div className="flex border-b border-slate-200 gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex items-center gap-2 px-5 py-3 font-semibold text-sm border-b-2 transition-all ${
-              activeTab === 'dashboard'
-                ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-xl shadow-xs'
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-            }`}
-          >
-            <LayoutDashboard size={18} />
-            ภาพรวมยอดขาย (Dashboard)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('search')}
-            className={`flex items-center gap-2 px-5 py-3 font-semibold text-sm border-b-2 transition-all ${
-              activeTab === 'search'
-                ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-xl shadow-xs'
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-            }`}
-          >
-            <Search size={18} />
-            ค้นหาและรายการออเดอร์ (Search Orders)
-            {displayData.length > 0 && (
-              <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-600 font-normal">
-                {displayData.length}
-              </span>
-            )}
-          </button>
-        </div>
 
         {/* Helpful Notification Banner when filtered date has 0 records */}
         {data.length > 0 &&
@@ -687,11 +688,11 @@ export default function BeverageDashboard() {
             </div>
           )}
 
-        {/* ======================= TAB 1: DASHBOARD ======================= */}
-        {activeTab === 'dashboard' && (
+        {/* ================= VIEW 1: DASHBOARD OVERVIEW ================= */}
+        {currentView === 'dashboard' && (
           <div className="space-y-6">
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* KPI Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard
                 title="ยอดขายรวม (Total Sales)"
                 value={`฿${metrics.totalSales.toLocaleString(undefined, {
@@ -771,7 +772,7 @@ export default function BeverageDashboard() {
                             strokeWidth: 2,
                             stroke: 'white',
                           }}
-                          activeDot={{ r: 6 }}
+                          activeDot={{ r: 8 }}
                           isAnimationActive={false}
                         />
                       </LineChart>
@@ -839,51 +840,49 @@ export default function BeverageDashboard() {
           </div>
         )}
 
-        {/* ======================= TAB 2: SEARCH & ORDERS ======================= */}
-        {activeTab === 'search' && (
+        {/* ================= VIEW 2: SEARCH & ORDERS TABLE ================= */}
+        {currentView === 'orders' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            {/* Search Header Bar */}
-            <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/40">
+            <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800">
-                  ค้นหาและรายการออเดอร์ทั้งหมด
+                  ค้นหาและรายการออเดอร์ (Search Orders)
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  {displayData.length > 0
-                    ? `พบผลลัพธ์ทั้งหมด ${displayData.length.toLocaleString()} รายการ`
-                    : 'ไม่พบรายการที่ตรงกับเงื่อนไข'}
-                </p>
+                {displayData.length > 0 && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    พบทั้งหมด {displayData.length.toLocaleString()} รายการ
+                  </p>
+                )}
               </div>
-
-              {/* [MODIFIED] Large Search Input - font 16px บน mobile ป้องกัน zoom */}
-              <div className="relative w-full sm:w-80">
+              {/* [MODIFIED] Search input ปรับขนาด text-base sm:text-sm ป้องกันซูม */}
+              <div className="relative w-full sm:w-72">
                 <input
                   type="text"
-                  placeholder="พิมพ์ค้นหาชื่อ, รหัสบิล, ที่อยู่..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white"
+                  placeholder="ค้นหาชื่อ, รหัสบิล, ที่อยู่..."
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   disabled={data.length === 0}
                 />
-                <Search
-                  size={18}
-                  className="text-slate-400 absolute left-3.5 top-3"
-                />
-                {searchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 text-xs font-semibold"
-                  >
-                    ล้าง
-                  </button>
-                )}
+                <svg
+                  className="w-4 h-4 text-slate-400 absolute left-3 top-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  ></path>
+                </svg>
               </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs text-slate-500 uppercase bg-slate-50/80 border-b border-slate-100">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50/50 border-b border-slate-100">
                   <tr>
                     <th scope="col" className="px-6 py-4 font-medium">
                       เวลา (Time)
@@ -987,7 +986,7 @@ export default function BeverageDashboard() {
                             </div>
                           </div>
                         ) : (
-                          'ไม่พบข้อมูลตามคำค้นหา (No data found)'
+                          'ไม่พบข้อมูล (No data found)'
                         )}
                       </td>
                     </tr>
@@ -1011,7 +1010,7 @@ export default function BeverageDashboard() {
                       setCurrentPage((prev) => Math.max(prev - 1, 1))
                     }
                     disabled={currentPage === 1}
-                    className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
+                    className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
                     title="Previous page"
                   >
                     <ChevronLeft size={16} />
@@ -1025,7 +1024,7 @@ export default function BeverageDashboard() {
                       setCurrentPage((prev) => Math.min(prev + 1, totalPages))
                     }
                     disabled={currentPage === totalPages}
-                    className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
+                    className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
                     title="Next page"
                   >
                     <ChevronRight size={16} />
@@ -1095,7 +1094,7 @@ const OrderRow = memo(function OrderRow({ order }) {
 // [MODIFIED] Memoized KPI Card - ปลด scale-110 ออกเพื่อไม่ให้กล่องกระตุกขยายเวลาสัมผัสบนมือถือ
 const KpiCard = memo(function KpiCard({ title, value, icon, trend, trendUp }) {
   return (
-    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between transition-colors">
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between group hover:border-indigo-100 transition-colors">
       <div>
         <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
         <h3 className="text-2xl font-bold text-slate-800">{value}</h3>
@@ -1109,7 +1108,7 @@ const KpiCard = memo(function KpiCard({ title, value, icon, trend, trendUp }) {
           </p>
         )}
       </div>
-      <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600">
+      <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center transition-colors">
         {icon}
       </div>
     </div>
