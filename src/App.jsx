@@ -33,9 +33,6 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
-  Search,
-  LayoutDashboard,
-  FileText,
 } from 'lucide-react';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
@@ -183,8 +180,8 @@ export default function BeverageDashboard() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // [MODIFIED] เมนูสลับหน้า: 'dashboard' (ภาพรวม & กราฟ) หรือ 'orders' (ค้นหา & ตารางออเดอร์)
-  const [currentView, setCurrentView] = useState('dashboard');
+  // [MODIFIED] สลับหน้าระหว่าง 'dashboard' (ภาพรวม) กับ 'search' (หน้าค้นหา)
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   // Use deferred value for smooth UI input typing
   const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -284,7 +281,6 @@ export default function BeverageDashboard() {
     selectedYear,
     filterMode,
     hideCanceled,
-    currentView,
   ]);
 
   // Generate list of available years dynamically
@@ -450,97 +446,87 @@ export default function BeverageDashboard() {
     chartTitle = 'แนวโน้มยอดขายรายเดือน (Monthly Sales Trend)';
 
   return (
-    <div
-      className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans"
-      style={{ touchAction: 'manipulation' }}
-    >
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-8">
         {/* Header Section */}
-        <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full lg:w-auto gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                <span className="text-3xl">🥤</span> Beverage Shop Dashboard
-              </h1>
-              <div className="flex items-center gap-3 mt-2">
-                <p className="text-slate-500 text-sm">
-                  Real-time overview of daily sales and orders
-                </p>
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <span className="text-3xl">🥤</span> Beverage Shop Dashboard
+            </h1>
+            <div className="flex items-center gap-3 mt-2">
+              <p className="text-slate-500 text-sm">
+                Real-time overview of daily sales and orders
+              </p>
 
-                {/* Status Indicator */}
-                {loading ? (
-                  <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
-                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Syncing...
-                  </span>
-                ) : error ? (
-                  <span className="text-xs px-2 py-1 rounded-full border bg-red-50 text-red-600 border-red-200">
-                    🔴 {error}
-                  </span>
-                ) : (
-                  <span
-                    className={`text-xs px-2 py-1 rounded-full border ${
-                      isLive
-                        ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                        : 'bg-slate-50 text-slate-600 border-slate-200'
-                    }`}
-                  >
-                    {isLive ? '🟢 Live Data' : '⚪ Waiting for Data'}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* [MODIFIED] แท็บสลับหน้าสไตล์ Clean Pill Button สวยงามเหมือนเดิม */}
-            <div className="flex bg-slate-100 p-1 rounded-xl text-sm self-stretch sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setCurrentView('dashboard')}
-                className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-medium transition-all ${
-                  currentView === 'dashboard'
-                    ? 'bg-white text-indigo-600 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <LayoutDashboard size={16} />
-                ภาพรวม (Dashboard)
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentView('orders')}
-                className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-medium transition-all ${
-                  currentView === 'orders'
-                    ? 'bg-white text-indigo-600 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Search size={16} />
-                ค้นหาออเดอร์ (Search)
-              </button>
+              {/* Status Indicator */}
+              {loading ? (
+                <span className="text-xs px-2 py-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200 flex items-center gap-1">
+                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Syncing...
+                </span>
+              ) : error ? (
+                <span className="text-xs px-2 py-1 rounded-full border bg-red-50 text-red-600 border-red-200">
+                  🔴 {error}
+                </span>
+              ) : (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full border ${
+                    isLive
+                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {isLive ? '🟢 Live Data' : '⚪ Waiting for Data'}
+                </span>
+              )}
             </div>
           </div>
 
           {/* Controls Wrapper */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+            {/* [MODIFIED] เมนูสลับหน้าระหว่างภาพรวม Dashboard และหน้าค้นหาออเดอร์ */}
+            <div className="flex bg-slate-100 p-1 rounded-lg text-sm w-full sm:w-auto">
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${
+                  activeTab === 'dashboard'
+                    ? 'bg-white text-indigo-600 shadow-sm font-medium'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                📊 ภาพรวม
+              </button>
+              <button
+                onClick={() => setActiveTab('search')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${
+                  activeTab === 'search'
+                    ? 'bg-white text-indigo-600 shadow-sm font-medium'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                🔍 ค้นหาออเดอร์
+              </button>
+            </div>
+
             {/* Period Filter Toggle */}
             <div className="flex bg-slate-100 p-1 rounded-lg text-sm w-full sm:w-auto">
               <button
-                type="button"
                 onClick={() => setFilterMode('day')}
                 className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${
                   filterMode === 'day'
@@ -551,7 +537,6 @@ export default function BeverageDashboard() {
                 วัน
               </button>
               <button
-                type="button"
                 onClick={() => setFilterMode('month')}
                 className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${
                   filterMode === 'month'
@@ -562,7 +547,6 @@ export default function BeverageDashboard() {
                 เดือน
               </button>
               <button
-                type="button"
                 onClick={() => setFilterMode('year')}
                 className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md transition-all ${
                   filterMode === 'year'
@@ -574,7 +558,7 @@ export default function BeverageDashboard() {
               </button>
             </div>
 
-            {/* [MODIFIED] Dynamic Date Picker Input - ปรับขนาดฟอนต์ 16px บน Mobile กันขยายจอ */}
+            {/* [MODIFIED] Dynamic Date Picker Input - ปรับขนาด text-base md:text-sm ป้องกันไม่ให้จอมือถือซูมขยายเวลาแตะ */}
             <div className="relative w-full sm:w-auto min-w-[160px]">
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                 <Calendar size={18} />
@@ -585,7 +569,7 @@ export default function BeverageDashboard() {
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base md:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
                 />
               )}
 
@@ -594,7 +578,7 @@ export default function BeverageDashboard() {
                   type="month"
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base md:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all"
                 />
               )}
 
@@ -602,7 +586,7 @@ export default function BeverageDashboard() {
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all appearance-none cursor-pointer"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-base md:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 py-2.5 shadow-sm transition-all appearance-none cursor-pointer"
                 >
                   <option value="">เลือกปี (All Years)</option>
                   {availableYears.map((year) => (
@@ -618,7 +602,6 @@ export default function BeverageDashboard() {
                 (filterMode === 'month' && selectedMonth) ||
                 (filterMode === 'year' && selectedYear)) && (
                 <button
-                  type="button"
                   onClick={() => {
                     if (filterMode === 'day') setSelectedDate('');
                     if (filterMode === 'month') setSelectedMonth('');
@@ -644,7 +627,7 @@ export default function BeverageDashboard() {
               )}
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer bg-white px-3 py-2.5 rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors shrink-0">
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer bg-white px-3 py-2.5 rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors">
               <input
                 type="checkbox"
                 checked={hideCanceled}
@@ -678,7 +661,6 @@ export default function BeverageDashboard() {
               </div>
               {latestAvailableDate && (
                 <button
-                  type="button"
                   onClick={() => setSelectedDate(latestAvailableDate)}
                   className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 shadow-sm"
                 >
@@ -688,10 +670,9 @@ export default function BeverageDashboard() {
             </div>
           )}
 
-        {/* ================= VIEW 1: DASHBOARD OVERVIEW ================= */}
-        {currentView === 'dashboard' && (
-          <div className="space-y-6">
-            {/* KPI Cards Grid */}
+        {/* [MODIFIED] หน้า 1: แสดงภาพรวม (Dashboard + Charts) */}
+        {activeTab === 'dashboard' && (
+          <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard
                 title="ยอดขายรวม (Total Sales)"
@@ -722,7 +703,6 @@ export default function BeverageDashboard() {
               />
             </div>
 
-            {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Sales Trend Chart */}
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
@@ -837,16 +817,16 @@ export default function BeverageDashboard() {
                 </div>
               </div>
             </div>
-          </div>
+          </>
         )}
 
-        {/* ================= VIEW 2: SEARCH & ORDERS TABLE ================= */}
-        {currentView === 'orders' && (
+        {/* [MODIFIED] หน้า 2: แสดงเฉพาะหน้าค้นหาและตารางออเดอร์ (Recent Orders Table) */}
+        {activeTab === 'search' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800">
-                  ค้นหาและรายการออเดอร์ (Search Orders)
+                  รายการออเดอร์ทั้งหมด (Order Lookup)
                 </h2>
                 {displayData.length > 0 && (
                   <p className="text-xs text-slate-500 mt-1">
@@ -854,12 +834,12 @@ export default function BeverageDashboard() {
                   </p>
                 )}
               </div>
-              {/* [MODIFIED] Search input ปรับขนาด text-base sm:text-sm ป้องกันซูม */}
-              <div className="relative w-full sm:w-72">
+              <div className="relative w-full sm:w-80">
+                {/* [MODIFIED] ปรับ font-size เป็น text-base md:text-sm ป้องกันจอมือถือซูมขยายเวลาพิมพ์ค้นหา */}
                 <input
                   type="text"
                   placeholder="ค้นหาชื่อ, รหัสบิล, ที่อยู่..."
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   disabled={data.length === 0}
@@ -1005,7 +985,6 @@ export default function BeverageDashboard() {
                 </p>
                 <div className="flex items-center gap-2">
                   <button
-                    type="button"
                     onClick={() =>
                       setCurrentPage((prev) => Math.max(prev - 1, 1))
                     }
@@ -1019,7 +998,6 @@ export default function BeverageDashboard() {
                     หน้า {currentPage} / {totalPages}
                   </span>
                   <button
-                    type="button"
                     onClick={() =>
                       setCurrentPage((prev) => Math.min(prev + 1, totalPages))
                     }
@@ -1091,7 +1069,7 @@ const OrderRow = memo(function OrderRow({ order }) {
   );
 });
 
-// [MODIFIED] Memoized KPI Card - ปลด scale-110 ออกเพื่อไม่ให้กล่องกระตุกขยายเวลาสัมผัสบนมือถือ
+// [MODIFIED] Memoized KPI Card - ปลด scale-110 ออกเพื่อไม่ให้กล่องกระตุกขยายเวลากด
 const KpiCard = memo(function KpiCard({ title, value, icon, trend, trendUp }) {
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between group hover:border-indigo-100 transition-colors">
@@ -1108,7 +1086,7 @@ const KpiCard = memo(function KpiCard({ title, value, icon, trend, trendUp }) {
           </p>
         )}
       </div>
-      <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center transition-colors">
+      <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center">
         {icon}
       </div>
     </div>
