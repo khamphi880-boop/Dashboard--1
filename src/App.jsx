@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   AreaChart,
   Area,
@@ -30,6 +30,8 @@ import {
   Sun,
   X,
   ArrowUpRight,
+  Radio,
+  Command,
 } from 'lucide-react';
 
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
@@ -46,15 +48,20 @@ const monthNamesThai = [
   'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
 ];
 
-// [MODIFIED] Strict Thai Date Parser (DD/MM/YYYY for Slashes, YYYY-MM-DD for Dashes)
+// High-Performance In-Memory Parsing Cache
+const dateParseCache = new Map();
+
 const parseDateTime = (datetimeString) => {
   if (!datetimeString) return null;
-  let str = String(datetimeString).trim();
+  const str = String(datetimeString).trim();
   if (!str) return null;
+
+  if (dateParseCache.has(str)) {
+    return dateParseCache.get(str);
+  }
 
   let year = 0, month = 0, day = 0, hour = 0, minute = 0;
 
-  // 1. ISO Timestamps with 'T' (e.g., "2026-08-03T15:00:00.000Z")
   if (str.includes('T')) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
@@ -64,11 +71,12 @@ const parseDateTime = (datetimeString) => {
       hour = d.getHours();
       minute = d.getMinutes();
       if (year > 2400) year -= 543;
-      return buildParsedResult(year, month, day, hour, minute);
+      const res = buildParsedResult(year, month, day, hour, minute);
+      dateParseCache.set(str, res);
+      return res;
     }
   }
 
-  // 2. Separate Date and Time
   const parts = str.split(/\s+/);
   const dateStr = parts[0];
   const timeStr = parts[1] || '';
@@ -79,17 +87,14 @@ const parseDateTime = (datetimeString) => {
     minute = parseInt(tParts[1], 10) || 0;
   }
 
-  // 3. Strict Delimiter Parsing
   if (dateStr.includes('-')) {
     const dParts = dateStr.split('-');
     if (dParts.length >= 3) {
       if (dParts[0].length === 4) {
-        // YYYY-MM-DD (ISO Format from Input Date)
         year = parseInt(dParts[0], 10);
         month = parseInt(dParts[1], 10);
         day = parseInt(dParts[2], 10);
       } else {
-        // DD-MM-YYYY (Thai Dashed Format)
         day = parseInt(dParts[0], 10);
         month = parseInt(dParts[1], 10);
         year = parseInt(dParts[2], 10);
@@ -99,12 +104,10 @@ const parseDateTime = (datetimeString) => {
     const dParts = dateStr.split('/');
     if (dParts.length >= 3) {
       if (dParts[0].length === 4) {
-        // YYYY/MM/DD
         year = parseInt(dParts[0], 10);
         month = parseInt(dParts[1], 10);
         day = parseInt(dParts[2], 10);
       } else {
-        // DD/MM/YYYY (Strict Thai Format: Day / Month / Year)
         day = parseInt(dParts[0], 10);
         month = parseInt(dParts[1], 10);
         year = parseInt(dParts[2], 10);
@@ -122,13 +125,15 @@ const parseDateTime = (datetimeString) => {
   }
 
   if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
+    dateParseCache.set(str, null);
     return null;
   }
 
-  // Convert B.E. (พ.ศ.) > 2400 to C.E. (ค.ศ.)
   if (year > 2400) year -= 543;
 
-  return buildParsedResult(year, month, day, hour, minute);
+  const result = buildParsedResult(year, month, day, hour, minute);
+  dateParseCache.set(str, result);
+  return result;
 };
 
 const buildParsedResult = (year, month, day, hour, minute) => {
@@ -139,19 +144,19 @@ const buildParsedResult = (year, month, day, hour, minute) => {
   const min = String(minute).padStart(2, '0');
 
   return {
-    isoDate: `${yyyy}-${mm}-${dd}`,                             // "2026-08-03"
-    isoMonth: `${yyyy}-${mm}`,                                  // "2026-08"
-    hourStr: `${hh}:00`,                                        // "15:00"
-    timeStr: `${hh}:${min}`,                                    // "15:30"
+    isoDate: `${yyyy}-${mm}-${dd}`,
+    isoMonth: `${yyyy}-${mm}`,
+    hourStr: `${hh}:00`,
+    timeStr: `${hh}:${min}`,
     year,
     month,
     day,
     hour,
     yearBE: year + 543,
     shortYearBE: String(year + 543).slice(-2),
-    displayShortBE: `${parseInt(dd, 10)} ${monthNamesThai[month]} ${String(year + 543).slice(-2)}`, // "3 ส.ค. 69"
-    displayDayMonth: `${parseInt(dd, 10)} ${monthNamesThai[month]}`,                                // "3 ส.ค."
-    displayMonthBE: `${monthNamesThai[month]} ${String(year + 543).slice(-2)}`                      // "ส.ค. 69"
+    displayShortBE: `${parseInt(dd, 10)} ${monthNamesThai[month]} ${String(year + 543).slice(-2)}`,
+    displayDayMonth: `${parseInt(dd, 10)} ${monthNamesThai[month]}`,
+    displayMonthBE: `${monthNamesThai[month]} ${String(year + 543).slice(-2)}`
   };
 };
 
@@ -170,22 +175,45 @@ const formatDateToBE = (datetimeString) => {
 const normalizeOrder = (raw) => {
   if (!raw || typeof raw !== 'object') return raw;
   
+  const datetime = raw.datetime || raw.timestampStr || raw['วัน-เวลา'] || raw['เวลา'] || '';
+  const billId = String(raw.billId || raw.orderId || raw['รหัสบิล'] || raw['บิล'] || '');
+  const customer = raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || raw['ลูกค้า'] || '';
+  const items = raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '';
+  const total = parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0;
+  const payment = raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || raw['ชำระ'] || 'เงินสด';
+  const status = raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '';
+  const deliveryPoint = raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '';
+  const address = raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '';
+  const remark = raw.remark || raw.note || raw['หมายเหตุ'] || '';
+
+  const parsed = parseDateTime(datetime);
+
+  // Pre-index for Ultra-Fast Search
+  const searchIndex = `${billId} ${customer} ${items} ${payment} ${status} ${deliveryPoint} ${address} ${remark} ฿${total}`.toLowerCase();
+
   return {
     ...raw,
-    datetime: raw.datetime || raw.timestampStr || raw['วัน-เวลา'] || raw['เวลา'] || '',
-    billId: raw.billId || raw.orderId || raw['รหัสบิล'] || raw['บิล'] || '',
-    customer: raw.customer || raw.lineName || raw['ชื่อลูกค้า'] || raw['ลูกค้า'] || '',
-    items: raw.items || raw.itemsSummary || raw['รายการสินค้า'] || raw['รายการ'] || '',
-    total: parseFloat(raw.total || raw['ยอดรวม (บาท)'] || raw['ยอดรวม'] || 0) || 0,
-    payment: raw.payment || raw.paymentMethod || raw['ช่องทางชำระ'] || raw['ชำระ'] || 'เงินสด',
-    status: raw.status || raw['สถานะออเดอร์'] || raw['สถานะ'] || '',
-    deliveryPoint: raw.deliveryPoint || raw.deliveryLocation || raw['จุดจัดส่ง'] || '',
-    address: raw.address || raw['ที่อยู่จัดส่ง'] || raw['ที่อยู่'] || '',
-    remark: raw.remark || raw.note || raw['หมายเหตุ'] || ''
+    datetime,
+    billId,
+    customer,
+    items,
+    total,
+    payment,
+    status,
+    deliveryPoint,
+    address,
+    remark,
+    _searchIndex: searchIndex,
+    _isoDate: parsed ? parsed.isoDate : '',
+    _isoMonth: parsed ? parsed.isoMonth : '',
+    _yearStr: parsed ? String(parsed.year) : '',
+    _formattedBE: formatDateToBE(datetime),
   };
 };
 
+const avatarColorCache = new Map();
 const getAvatarColor = (name = '') => {
+  if (avatarColorCache.has(name)) return avatarColorCache.get(name);
   const colors = [
     'from-indigo-500 to-purple-500',
     'from-blue-500 to-cyan-500',
@@ -197,14 +225,21 @@ const getAvatarColor = (name = '') => {
   for (let i = 0; i < name.length; i++) {
     charCode += name.charCodeAt(i);
   }
-  return colors[charCode % colors.length];
+  const color = colors[charCode % colors.length];
+  avatarColorCache.set(name, color);
+  return color;
 };
 
 export default function BeverageDashboard() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
   const [error, setError] = useState(null);
+  
+  // Search State
   const [searchTerm, setSearchTerm] = useState('');
+  const searchInputRef = useRef(null);
 
   const [filterMode, setFilterMode] = useState('year');
   const [selectedDate, setSelectedDate] = useState('');
@@ -214,17 +249,52 @@ export default function BeverageDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
 
+  // Real-time Controls
+  const [autoSync, setAutoSync] = useState(true);
+  const [syncInterval, setSyncInterval] = useState(30);
+
+  const isFetchingRef = useRef(false);
+
   const DATA_URL =
     'https://script.google.com/macros/s/AKfycbzWpWDAZsAh1IrHn5L_7qxVyeepCods90zfR1bPqL1WklWDfk69mrf3-jCt6YSxbB09/exec';
 
-  const fetchData = async () => {
-    setLoading(true);
+  // Global Keyboard Shortcut: '/' or 'Ctrl+K' to focus Search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (
+        e.key === '/' &&
+        document.activeElement !== searchInputRef.current &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'SELECT'
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const fetchData = useCallback(async (isBackground = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
+    if (isBackground) {
+      setIsSyncing(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
+
     try {
-      const response = await fetch(DATA_URL);
+      const response = await fetch(DATA_URL, { cache: 'no-store' });
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error('404 Not Found - ลิงก์ API ไม่ถูกต้อง หรือถูกยกเลิกการ Deploy');
+          throw new Error('404 Not Found - ลิงก์ API ไม่ถูกต้อง');
         }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -265,29 +335,66 @@ export default function BeverageDashboard() {
           setData(normalizedData);
           setIsLive(true);
         }
+        
+        const now = new Date();
+        setLastSyncTime(
+          `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+        );
       } else {
-        setData([]);
-        setIsLive(false);
-        setError('ไม่พบข้อมูลจากระบบ (Empty Data)');
+        if (!isBackground) {
+          setData([]);
+          setIsLive(false);
+          setError('ไม่พบข้อมูลจากระบบ (Empty Data)');
+        }
       }
     } catch (err) {
       console.error('Error fetching data:', err);
-      setData([]);
-      setIsLive(false);
-      setError(err.message || 'ไม่สามารถดึงข้อมูลได้ (Connection Error)');
+      if (!isBackground) {
+        setData([]);
+        setIsLive(false);
+        setError(err.message || 'ไม่สามารถดึงข้อมูลได้ (Connection Error)');
+      }
     } finally {
-      setLoading(false);
+      if (isBackground) {
+        setIsSyncing(false);
+      } else {
+        setLoading(false);
+      }
+      isFetchingRef.current = false;
     }
-  };
+  }, [DATA_URL]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(false);
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (!autoSync || syncInterval <= 0) return;
+
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchData(true);
+      }
+    }, syncInterval * 1000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [autoSync, syncInterval, fetchData]);
 
   useEffect(() => {
     if (data.length > 0 && !selectedYear) {
       const years = data
-        .map((item) => formatDateForComparison(item.datetime).split('-')[0])
+        .map((item) => item._yearStr || formatDateForComparison(item.datetime).split('-')[0])
         .filter(Boolean)
         .sort();
       if (years.length > 0) {
@@ -300,7 +407,7 @@ export default function BeverageDashboard() {
   const availableYears = useMemo(() => {
     const years = new Set(
       data
-        .map((item) => formatDateForComparison(item.datetime).split('-')[0])
+        .map((item) => item._yearStr || formatDateForComparison(item.datetime).split('-')[0])
         .filter(Boolean)
     );
     if (selectedYear) years.add(selectedYear);
@@ -309,11 +416,12 @@ export default function BeverageDashboard() {
 
   const latestAvailableDate = useMemo(() => {
     if (!data || data.length === 0) return '';
-    const dates = data
-      .map((item) => formatDateForComparison(item.datetime))
-      .filter(Boolean)
-      .sort();
-    return dates.length > 0 ? dates[dates.length - 1] : '';
+    let maxDate = '';
+    for (let i = 0; i < data.length; i++) {
+      const iso = data[i]._isoDate || formatDateForComparison(data[i].datetime);
+      if (iso && iso > maxDate) maxDate = iso;
+    }
+    return maxDate;
   }, [data]);
 
   const todayMetrics = useMemo(() => {
@@ -329,10 +437,8 @@ export default function BeverageDashboard() {
         const isCanceled = status.includes('ยกเลิก') || status.toLowerCase().includes('cancel');
         if (hideCanceled && isCanceled) return false;
 
-        const dt = String(item.datetime || '').trim();
-        if (!dt) return false;
-
-        return formatDateForComparison(dt) === isoDate;
+        const dtIso = item._isoDate || formatDateForComparison(item.datetime);
+        return dtIso === isoDate;
       });
     };
 
@@ -355,31 +461,36 @@ export default function BeverageDashboard() {
     };
   }, [data, hideCanceled, latestAvailableDate]);
 
+  // Enhanced Universal Search & Filter Engine
   const displayData = useMemo(() => {
     let filtered = data;
 
     if (filterMode === 'day' && selectedDate) {
       filtered = filtered.filter(
-        (item) => formatDateForComparison(item.datetime) === selectedDate
+        (item) => (item._isoDate || formatDateForComparison(item.datetime)) === selectedDate
       );
     } else if (filterMode === 'month' && selectedMonth) {
       filtered = filtered.filter((item) =>
-        formatDateForComparison(item.datetime).startsWith(selectedMonth)
+        (item._isoDate || formatDateForComparison(item.datetime)).startsWith(selectedMonth)
       );
     } else if (filterMode === 'year' && selectedYear) {
       filtered = filtered.filter((item) =>
-        formatDateForComparison(item.datetime).startsWith(selectedYear)
+        (item._isoDate || formatDateForComparison(item.datetime)).startsWith(selectedYear)
       );
     }
 
     if (searchTerm) {
-      const lowerCaseSearch = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (item) =>
-          (item.customer?.toLowerCase() || '').includes(lowerCaseSearch) ||
-          (item.billId?.toLowerCase() || '').includes(lowerCaseSearch) ||
-          (item.address?.toLowerCase() || '').includes(lowerCaseSearch)
-      );
+      const searchKeywords = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      filtered = filtered.filter((item) => {
+        const searchIndex = item._searchIndex || '';
+        // Multi-keyword check: every keyword must match somewhere in the order
+        for (let i = 0; i < searchKeywords.length; i++) {
+          if (!searchIndex.includes(searchKeywords[i])) {
+            return false;
+          }
+        }
+        return true;
+      });
     }
 
     if (hideCanceled) {
@@ -403,51 +514,47 @@ export default function BeverageDashboard() {
   ]);
 
   const metrics = useMemo(() => {
-    const totalSales = displayData.reduce(
-      (sum, item) => sum + (parseFloat(item.total) || 0),
-      0
-    );
-    const totalOrders = displayData.length;
-    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
-
+    let totalSales = 0;
     let totalItems = 0;
-    displayData.forEach((order) => {
-      const itemsStr = order.items || '';
+    const totalOrders = displayData.length;
+
+    for (let i = 0; i < totalOrders; i++) {
+      const order = displayData[i];
+      totalSales += parseFloat(order.total) || 0;
+
+      const itemsStr = order.items;
       if (itemsStr) {
         const lines = String(itemsStr).split(/\n|,/);
-        lines.forEach((line) => {
-          const trimmed = line.trim();
-          if (!trimmed) return;
+        for (let j = 0; j < lines.length; j++) {
+          const trimmed = lines[j].trim();
+          if (!trimmed) continue;
           const match = trimmed.match(/^(\d+)\s*x/i) || trimmed.match(/x\s*(\d+)/i);
           if (match && match[1]) {
             totalItems += parseInt(match[1], 10);
           } else {
             totalItems += 1;
           }
-        });
+        }
       }
-    });
+    }
 
+    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
     return { totalSales, totalOrders, avgOrderValue, totalItems };
   }, [displayData]);
 
   const chartsData = useMemo(() => {
     const paymentMap = {};
-    displayData.forEach((item) => {
-      const pm = item.payment || 'เงินสด';
-      paymentMap[pm] = (paymentMap[pm] || 0) + 1;
-    });
-    const paymentData = Object.keys(paymentMap).map((key) => ({
-      name: key,
-      value: paymentMap[key],
-    }));
-
     const trendMap = {};
 
-    displayData.forEach((item) => {
-      if (!item.datetime) return;
+    for (let i = 0; i < displayData.length; i++) {
+      const item = displayData[i];
+
+      const pm = item.payment || 'เงินสด';
+      paymentMap[pm] = (paymentMap[pm] || 0) + 1;
+
+      if (!item.datetime) continue;
       const parsed = parseDateTime(item.datetime);
-      if (!parsed) return;
+      if (!parsed) continue;
 
       let sortKey = '';
       let displayKey = '';
@@ -470,7 +577,12 @@ export default function BeverageDashboard() {
         trendMap[sortKey] = { time: displayKey, sales: 0 };
       }
       trendMap[sortKey].sales += parseFloat(item.total) || 0;
-    });
+    }
+
+    const paymentData = Object.keys(paymentMap).map((key) => ({
+      name: key,
+      value: paymentMap[key],
+    }));
 
     const trendData = Object.keys(trendMap)
       .sort()
@@ -483,7 +595,9 @@ export default function BeverageDashboard() {
   if (filterMode === 'day' && selectedDate)
     chartTitle = `แนวโน้มยอดขายรายชั่วโมง (วันที่ ${formatDateToBE(selectedDate)})`;
   if (filterMode === 'year' && selectedYear)
-    chartTitle = `แนวโน้มยอดขายรายเดือน (ประจำปี พ.ศ. ${parseInt(selectedYear) + 543})`;
+    chartTitle = `แนวโน้มยอดขายรายเดือน (ประจำปี พ.ศ. ${parseInt(selectedYear, 10) + 543})`;
+
+  const quickFilterOptions = ['โอนพร้อมเพย์', 'เงินสด', 'ไทยช่วยไทยพลัส'];
 
   return (
     <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white p-4 sm:p-6 lg:p-8">
@@ -510,13 +624,17 @@ export default function BeverageDashboard() {
                   Enterprise
                 </span>
               </div>
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex flex-wrap items-center gap-3 mt-1">
                 <p className="text-slate-400 text-xs font-medium">
-                  Real-time beverage analytics & revenue engine {selectedYear ? `(พ.ศ. ${parseInt(selectedYear) + 543})` : ''}
+                  Real-time beverage analytics & revenue engine {selectedYear ? `(พ.ศ. ${parseInt(selectedYear, 10) + 543})` : ''}
                 </p>
                 {loading ? (
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20 animate-pulse">
-                    <RefreshCw className="w-3 h-3 animate-spin" /> Syncing...
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Loading...
+                  </span>
+                ) : isSyncing ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-cyan-400 bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-cyan-500/20 animate-pulse">
+                    <Radio className="w-3 h-3 animate-spin" /> Syncing Live Data...
                   </span>
                 ) : error ? (
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/20">
@@ -524,7 +642,12 @@ export default function BeverageDashboard() {
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> {isLive ? 'Live Engine' : 'Offline'}
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> {isLive ? (autoSync ? `Live Sync (${syncInterval}s)` : 'Live (Manual)') : 'Offline'}
+                  </span>
+                )}
+                {lastSyncTime && (
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    (อัปเดต: {lastSyncTime})
                   </span>
                 )}
               </div>
@@ -533,6 +656,34 @@ export default function BeverageDashboard() {
 
           {/* CONTROLS */}
           <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            {/* Real-time Sync Dropdown */}
+            <div className="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 text-xs shadow-inner">
+              <button
+                onClick={() => setAutoSync(!autoSync)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  autoSync 
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="เปิด/ปิดการอัปเดตข้อมูลอัตโนมัติ"
+              >
+                <Radio className={`w-3.5 h-3.5 ${autoSync ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
+                <span>{autoSync ? 'Auto' : 'Manual'}</span>
+              </button>
+              {autoSync && (
+                <select
+                  value={syncInterval}
+                  onChange={(e) => setSyncInterval(Number(e.target.value))}
+                  className="bg-transparent text-slate-300 text-xs pl-2 pr-1 py-1 focus:outline-none cursor-pointer font-mono font-bold"
+                  title="ความถี่ในการอัปเดต"
+                >
+                  <option value={15} className="bg-slate-950 text-slate-200">15s</option>
+                  <option value={30} className="bg-slate-950 text-slate-200">30s</option>
+                  <option value={60} className="bg-slate-950 text-slate-200">60s</option>
+                </select>
+              )}
+            </div>
+
             {/* Segmented Period Tabs */}
             <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 shadow-inner">
               {['day', 'month', 'year'].map((mode) => (
@@ -580,7 +731,7 @@ export default function BeverageDashboard() {
                   <option value="">ทั้งหมด (All Years)</option>
                   {availableYears.map((year) => (
                     <option key={year} value={year}>
-                      พ.ศ. {parseInt(year) + 543} ({year})
+                      พ.ศ. {parseInt(year, 10) + 543} ({year})
                     </option>
                   ))}
                 </select>
@@ -615,11 +766,11 @@ export default function BeverageDashboard() {
 
             {/* Refresh Button */}
             <button 
-              onClick={fetchData}
-              className="p-2 bg-slate-950/80 border border-slate-800/80 rounded-xl text-slate-400 hover:text-white hover:border-slate-700 transition-all shadow-sm"
-              title="รีเฟรชข้อมูล"
+              onClick={() => fetchData(false)}
+              className="p-2 bg-slate-950/80 border border-slate-800/80 rounded-xl text-slate-400 hover:text-white hover:border-slate-700 transition-all shadow-sm active:scale-95"
+              title="รีเฟรชข้อมูลทันที"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loading || isSyncing ? 'animate-spin text-indigo-400' : ''}`} />
             </button>
           </div>
         </header>
@@ -803,24 +954,75 @@ export default function BeverageDashboard() {
         {/* ORDERS TABLE SECTION */}
         <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden">
           
-          <div className="p-6 border-b border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          {/* Enhanced Search & Table Header */}
+          <div className="p-6 border-b border-slate-800/80 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Zap className="w-4 h-4 text-amber-400" />
-                รายการออเดอร์ล่าสุด (Live Transactions)
-              </h2>
+                <h2 className="text-base font-bold text-white">
+                  รายการออเดอร์ล่าสุด (Live Transactions)
+                </h2>
+                {searchTerm && (
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[11px] font-mono animate-fade-in">
+                    พบ {displayData.length} รายการ
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">แสดง {displayData.length} รายการที่ตรงตามเงื่อนไข</p>
             </div>
 
-            <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
-                placeholder="ค้นหาชื่อลูกค้า, รหัสบิล, ที่อยู่..."
-                className="w-full bg-slate-950/90 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            {/* Enhanced Smart Search Box */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+              
+              {/* Quick Search Chips */}
+              <div className="hidden xl:flex items-center gap-1.5">
+                {quickFilterOptions.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => setSearchTerm(searchTerm === tag ? '' : tag)}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-medium transition-all ${
+                      searchTerm === tag
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-500'
+                        : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Input with Keyboard Shortcut & Clear Icon */}
+              <div className="relative w-full sm:w-80 group">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 transition-colors group-focus-within:text-indigo-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="ค้นหาชื่อ, เมนู, รหัสบิล, ช่องทางชำระ..."
+                  className="w-full bg-slate-950/90 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-14 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                
+                {/* Clear Button or Keyboard Shortcut Badge */}
+                <div className="absolute right-2.5 top-2 flex items-center">
+                  {searchTerm ? (
+                    <button
+                      onClick={() => {
+                        setSearchTerm('');
+                        searchInputRef.current?.focus();
+                      }}
+                      className="p-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
+                      title="ล้างคำค้นหา (Clear)"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <span className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-[10px] font-mono text-slate-400 pointer-events-none">
+                      <Command className="w-2.5 h-2.5" /> K
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -858,7 +1060,7 @@ export default function BeverageDashboard() {
                         className="hover:bg-slate-800/30 transition-colors group"
                       >
                         <td className="px-6 py-4 whitespace-nowrap font-mono text-slate-400">
-                          {formatDateToBE(order.datetime)}
+                          {order._formattedBE || formatDateToBE(order.datetime)}
                         </td>
                         <td className="px-6 py-4 font-mono font-medium text-indigo-400">
                           #{order.billId}
@@ -914,7 +1116,18 @@ export default function BeverageDashboard() {
                 ) : (
                   <tr>
                     <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
-                      ไม่พบข้อมูลรายการออเดอร์ตามเงื่อนไขที่เลือก
+                      <div className="flex flex-col items-center gap-2">
+                        <Search className="w-6 h-6 text-slate-600" />
+                        <span>ไม่พบข้อมูลรายการออเดอร์ตามเงื่อนไขที่เลือก</span>
+                        {searchTerm && (
+                          <button
+                            onClick={() => setSearchTerm('')}
+                            className="text-xs text-indigo-400 hover:text-indigo-300 underline mt-1"
+                          >
+                            ล้างคำค้นหา "{searchTerm}"
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}
